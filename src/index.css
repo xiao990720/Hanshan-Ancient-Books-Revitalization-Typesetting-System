@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+@import url("https://fonts.googleapis.com/css2?family=Klee+One:wght@400;600&family=Noto+Serif+SC:wght@400;700&display=swap");
+
+@font-face {
+  font-family: "TypeLand KangXi";
+  src: url("https://db.onlinewebfonts.com/t/9e248b6cc7134bc5b1b4b9b657ba5458.woff2") format("woff2"),
+       url("https://db.onlinewebfonts.com/t/9e248b6cc7134bc5b1b4b9b657ba5458.ttf") format("truetype");
+  font-display: swap;
+}
+
+/* Custom legacy and uploaded Chinese typeface classes to bypass Tailwind's arbitrary class space-parsing limitations */
+.font-kangxi {
+  font-family: "TypeLand KangXi", "TypeLand 康熙字典體", "TypeLand康熙字典體", "TypeLand-KangXi-ZiDian-Font", "康熙字典體", "康熙字典体", "KangXiDict", "Klee One", "Noto Serif SC", serif;
+}
+
+.font-kaiti {
+  font-family: "STKaiti", "KaiTi", "华文楷体", "楷体", serif;
+}
+
+.font-fangsong {
+  font-family: "STFangsong", "FangSong", "仿宋", "华文仿宋", serif;
+}
+
+.font-song {
+  font-family: "SimSun", "STSong", "宋体", "Noto Serif SC", serif;
+}
+
+.font-clerical {
+  font-family: "LiSu", "SimHei", "隶书", "Noto Serif SC", cursive, sans-serif;
+}
+
+/* High-fidelity media print styles to format book leaf perfectly for print-to-PDF */
+@media print {
+  /* Hide entire workspace widgets except the Left book viewer section */
+  header,
+  footer,
+  .lg\:col-span-5, /* Sidebar options */
+  .p-4.rounded-xl, /* Help tips description */
+  .border-t.border-\[\#dcd7c9\]:last-of-type, /* ink controls */
+  #book-viewer > div:first-child, /* Pagination topbar */
+  button {
+    display: none !important;
+  }
+
+  body, html, #root {
+    background: #fbf9f4 !important;
+    color: #3d2b1f !important;
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  main {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .lg\:col-span-7 {
+    width: 100% !important;
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  #book-viewer {
+    display: block !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  #book-viewer > div:last-child {
+    display: flex !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Force print background graphics */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #book-viewer [class*="min-h-"] {
+    position: relative !important;
+    width: 100% !important;
+    max-width: 95vw !important;
+    height: 92vh !important;
+    font-size: 1.12em !important;
+    box-shadow: none !important;
+    margin: auto !important;
+    page-break-inside: avoid !important;
+  }
+}
+
+

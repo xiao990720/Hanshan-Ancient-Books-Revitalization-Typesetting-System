@@ -1,0 +1,6 @@
+{
+  "name": "古籍排版系统",
+  "description": "极具古典美学与数字活化交互的古籍排版系统。支持垂直右向左排版、朱朱丝/乌丝栏、版心鱼尾折页、自定义印章钤印、宣纸宣德墨宝批注，并结合 Gemini AI 辅助进行自动断句、文言翻译、小字双行批注生成。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
