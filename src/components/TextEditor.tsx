@@ -6,9 +6,10 @@ interface TextEditorProps {
   allBooks?: Book[];
   book: Book;
   onUpdateBook: (updated: Book) => void;
+  onCursorPageJump?: (cursorIndex: number) => void;
 }
 
-export const TextEditor: React.FC<TextEditorProps> = ({ allBooks = [], book, onUpdateBook }) => {
+export const TextEditor: React.FC<TextEditorProps> = ({ allBooks = [], book, onUpdateBook, onCursorPageJump }) => {
   const [activeTab, setActiveTab] = useState<"content" | "meta" | "ai">("content");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAction, setAiAction] = useState<string | null>(null);
@@ -217,7 +218,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({ allBooks = [], book, onU
           <div className="flex-1 flex flex-col space-y-3">
             <div className="flex items-center justify-between relative">
               <span className="text-[11px] text-[#7c6a5a] font-serif leading-relaxed">
-                请输入一篇文章，使用双层半角括号包裹注释： `((我的批注内容))`，即可编译为双行夹注。<br/>段首添加 <b>【顶格】</b> 可强制该段落取消缩进定格排版。换页可以单独占一行输入 <b>===换页===</b>。
+                请输入一篇文章，使用双层半角括号包裹注释： `((我的批注内容))`，即可编译为双行夹注。<br/>段首添加 <b>【顶格】</b> 可取消该段缩进。单独占行输入 <b>===换页===</b> 或 <b>===空列===</b> 可强制换页/空一列。
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -301,6 +302,20 @@ export const TextEditor: React.FC<TextEditorProps> = ({ allBooks = [], book, onU
               id="book-content-textarea"
               value={book.content}
               onChange={(e) => handleChange("content", e.target.value)}
+              onClick={(e) => {
+                const target = e.target as HTMLTextAreaElement;
+                if (onCursorPageJump) {
+                  onCursorPageJump(target.selectionStart);
+                }
+              }}
+              onKeyUp={(e) => {
+                const target = e.target as HTMLTextAreaElement;
+                if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+                  if (onCursorPageJump) {
+                    onCursorPageJump(target.selectionStart);
+                  }
+                }
+              }}
               placeholder="子曰：学而时习之（在你想加注解的字词旁，添加双扩号如：((温习实践)) 即可输出古典双行小字。），不亦说乎？..."
               className="w-full flex-1 min-h-[220px] bg-[#fcfaf2] border border-[#dcd7c9] p-4 rounded-lg text-[#3d2b1f] font-serif text-[13px] leading-relaxed tracking-wide focus:outline-none focus:border-[#8b4513] resize-none"
             />

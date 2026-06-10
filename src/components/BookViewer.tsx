@@ -350,6 +350,12 @@ export const BookViewer: React.FC<BookViewerProps> = ({
         return;
       }
 
+      // Manual Blank Column
+      if (p === "===空列===" || p === "===空行===") {
+        lines.push({ tokens: [] });
+        return;
+      }
+
       let forceZeroIndent = false;
       if (p.startsWith("【顶格】") || p.startsWith("【定格】")) {
         forceZeroIndent = true;

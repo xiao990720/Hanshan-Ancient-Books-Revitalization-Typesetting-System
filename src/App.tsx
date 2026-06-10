@@ -154,9 +154,9 @@ export default function App() {
 
   const activeBook = books.find((b) => b.id === activeBookId) || books[0];
 
-  const activeBookTotalPages = React.useMemo(() => {
-    if (!activeBook) return 1;
-    const rawContent = activeBook.content || "";
+  const getActiveBookPageCount = React.useCallback((text: string) => {
+    if (!activeBook) return { totalPages: 1, cursorPage: 1 };
+    const rawContent = text || "";
     let paragraphs = rawContent.split(/\n+/).map(p => p.trim()).filter(Boolean);
     const normalizedTitle = activeBook.title ? activeBook.title.trim() : "";
 
@@ -171,32 +171,38 @@ export default function App() {
     };
 
     paragraphs.forEach((p, pIdx) => {
+      if (p === "===换页===") {
+        lines.push({ isPageBreak: true });
+        return;
+      }
+      if (p === "===空列===" || p === "===空行===") {
+        lines.push({ isEmptyColumn: true });
+        return;
+      }
+      let forceZeroIndent = false;
+      if (p.startsWith("【顶格】") || p.startsWith("【定格】")) {
+        forceZeroIndent = true;
+        p = p.substring(4);
+      }
+
       let indentSpaces = 1;
       const isShort = p.length <= 15;
-      const hasPunct = /[，。？！；：、“”‘’《》〕〕•]/.test(p);
+      const hasPunct = /[，。？！；：、“”‘’《》〔〕〔〕•]/.test(p);
       const isAuthorIndicator = /撰|著|作|注|校|氏|译|编|等/.test(p) || p.endsWith("氏");
 
       const isTitle = isShort && !hasPunct && !isAuthorIndicator && (
-        p.endsWith("卷") || 
-        p.endsWith("章") || 
-        p.endsWith("篇") || 
-        p.endsWith("记") || 
-        p.endsWith("经") || 
-        p.endsWith("传") || 
-        p.endsWith("录") || 
-        p.endsWith("说") || 
-        p.endsWith("序") || 
-        p.endsWith("集") || 
-        p.endsWith("诀") || 
-        p.endsWith("句") ||
-        p.includes("·") ||
-        p === normalizedTitle ||
-        (pIdx === 0 && !hasPunct)
+        p.endsWith("卷") || p.endsWith("章") || p.endsWith("篇") || 
+        p.endsWith("记") || p.endsWith("经") || p.endsWith("传") || 
+        p.endsWith("录") || p.endsWith("说") || p.endsWith("序") || 
+        p.endsWith("集") || p.endsWith("诀") || p.endsWith("句") ||
+        p.includes("·") || p === normalizedTitle || (pIdx === 0 && !hasPunct)
       );
 
       const isAuthor = isShort && !hasPunct && (isAuthorIndicator || (pIdx === 1 && !hasPunct));
 
-      if (isTitle) {
+      if (forceZeroIndent) {
+        indentSpaces = 0;
+      } else if (isTitle) {
         indentSpaces = 0;
       } else if (isAuthor) {
         indentSpaces = 4;
@@ -233,7 +239,7 @@ export default function App() {
         } else {
           const char = p[i];
           i++;
-          const isPunct = /[，。？！；：、“”‘’《》〕〕•]/.test(char);
+          const isPunct = /[，。？！；：、“”‘’《》〔〕〔〕•]/.test(char);
           if (!isPunct) {
             currentLineTokens.push("char");
           }
@@ -249,10 +255,44 @@ export default function App() {
       flushLine();
     });
 
-    const totalLines = lines.length;
-    const pageCount = Math.ceil(totalLines / config.linesPerPage);
-    return (pageCount > 0 ? pageCount : 1) + 1; // plus front cover
+    let currentLeafLines = 0;
+    let pageCount = 0;
+    lines.forEach(line => {
+      if (line.isPageBreak) {
+        if (currentLeafLines > 0) {
+          pageCount++;
+          currentLeafLines = 0;
+        }
+        return;
+      }
+      currentLeafLines++;
+      if (currentLeafLines >= config.linesPerPage) {
+        pageCount++;
+        currentLeafLines = 0;
+      }
+    });
+
+    if (currentLeafLines > 0) {
+      pageCount++;
+    }
+
+    return { totalPages: (pageCount > 0 ? pageCount : 1) + 1, cursorPage: (pageCount > 0 ? pageCount : 1) };
   }, [activeBook, config.charsPerLine, config.linesPerPage]);
+
+  const activeBookTotalPages = React.useMemo(() => {
+    if (!activeBook) return 1;
+    return getActiveBookPageCount(activeBook.content || "").totalPages;
+  }, [activeBook, getActiveBookPageCount]);
+
+  const handleCursorPageJump = (cursorIndex: number) => {
+    if (!activeBook) return;
+    const textUpToCursor = (activeBook.content || "").substring(0, cursorIndex);
+    const cursorPageResult = getActiveBookPageCount(textUpToCursor);
+    const targetPage = cursorPageResult.cursorPage; // 0 is cover, content starts at 1, so the `cursorPage` correctly maps to the content page index!
+    if (targetPage !== currentPageIndex && targetPage < activeBookTotalPages) {
+      setCurrentPageIndex(targetPage);
+    }
+  };
 
   // Helper sound plucks
   const triggerPluck = (pitchOffset: number = 0) => {
@@ -918,6 +958,7 @@ export default function App() {
                 allBooks={books}
                 book={activeBook}
                 onUpdateBook={handleUpdateActiveBook}
+                onCursorPageJump={handleCursorPageJump}
               />
             )}
           </div>
