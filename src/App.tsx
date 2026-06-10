@@ -154,6 +154,106 @@ export default function App() {
 
   const activeBook = books.find((b) => b.id === activeBookId) || books[0];
 
+  const activeBookTotalPages = React.useMemo(() => {
+    if (!activeBook) return 1;
+    const rawContent = activeBook.content || "";
+    let paragraphs = rawContent.split(/\n+/).map(p => p.trim()).filter(Boolean);
+    const normalizedTitle = activeBook.title ? activeBook.title.trim() : "";
+
+    const lines: any[] = [];
+    let currentLineTokens: any[] = [];
+
+    const flushLine = () => {
+      if (currentLineTokens.length > 0) {
+        lines.push(currentLineTokens);
+        currentLineTokens = [];
+      }
+    };
+
+    paragraphs.forEach((p, pIdx) => {
+      let indentSpaces = 1;
+      const isShort = p.length <= 15;
+      const hasPunct = /[，。？！；：、“”‘’《》〕〕•]/.test(p);
+      const isAuthorIndicator = /撰|著|作|注|校|氏|译|编|等/.test(p) || p.endsWith("氏");
+
+      const isTitle = isShort && !hasPunct && !isAuthorIndicator && (
+        p.endsWith("卷") || 
+        p.endsWith("章") || 
+        p.endsWith("篇") || 
+        p.endsWith("记") || 
+        p.endsWith("经") || 
+        p.endsWith("传") || 
+        p.endsWith("录") || 
+        p.endsWith("说") || 
+        p.endsWith("序") || 
+        p.endsWith("集") || 
+        p.endsWith("诀") || 
+        p.endsWith("句") ||
+        p.includes("·") ||
+        p === normalizedTitle ||
+        (pIdx === 0 && !hasPunct)
+      );
+
+      const isAuthor = isShort && !hasPunct && (isAuthorIndicator || (pIdx === 1 && !hasPunct));
+
+      if (isTitle) {
+        indentSpaces = 0;
+      } else if (isAuthor) {
+        indentSpaces = 4;
+      } else {
+        indentSpaces = 1;
+      }
+
+      for (let s = 0; s < indentSpaces; s++) {
+        currentLineTokens.push("space");
+      }
+
+      let i = 0;
+      while (i < p.length) {
+        if (p.substring(i, i + 2) === "((") {
+          let closingIdx = p.indexOf("))", i + 2);
+          if (closingIdx === -1) closingIdx = p.length;
+          const notesText = p.substring(i + 2, closingIdx).trim();
+          i = closingIdx === p.length ? p.length : closingIdx + 2;
+
+          if (notesText) {
+            const charsArray = notesText.split("");
+            const mid = Math.ceil(charsArray.length / 2);
+            const row1 = charsArray.slice(0, mid);
+            const row2 = charsArray.slice(mid);
+            const cellHeightCost = Math.max(row1.length, row2.length);
+
+            if (currentLineTokens.length + cellHeightCost > config.charsPerLine) {
+              flushLine();
+            }
+            for (let c = 0; c < cellHeightCost; c++) {
+              currentLineTokens.push("note");
+            }
+          }
+        } else {
+          const char = p[i];
+          i++;
+          const isPunct = /[，。？！；：、“”‘’《》〕〕•]/.test(char);
+          if (!isPunct) {
+            currentLineTokens.push("char");
+          }
+        }
+
+        if (currentLineTokens.length >= config.charsPerLine) {
+          const overflow = currentLineTokens.slice(config.charsPerLine);
+          currentLineTokens = currentLineTokens.slice(0, config.charsPerLine);
+          flushLine();
+          currentLineTokens = overflow;
+        }
+      }
+      flushLine();
+    });
+
+    const totalLines = lines.length;
+    const pageCount = Math.ceil(totalLines / config.linesPerPage);
+    return (pageCount > 0 ? pageCount : 1) + 1; // plus front cover
+  }, [activeBook, config.charsPerLine, config.linesPerPage]);
+
   // Helper sound plucks
   const triggerPluck = (pitchOffset: number = 0) => {
     if (guzhengAudioEnabled) {
@@ -279,49 +379,248 @@ export default function App() {
     }
   };
 
+  // Safe oklch/oklab conversion to rgb/rgba using 1x1 canvas context
+  const getStyleProxyApp = (style: CSSStyleDeclaration): CSSStyleDeclaration => {
+    // 1x1 canvas cached local reference
+    let appCanvas = document.getElementById("temp-app-color-canvas") as HTMLCanvasElement;
+    if (!appCanvas) {
+      appCanvas = document.createElement("canvas");
+      appCanvas.id = "temp-app-color-canvas";
+      appCanvas.width = 1;
+      appCanvas.height = 1;
+      appCanvas.style.display = "none";
+      document.body.appendChild(appCanvas);
+    }
+    const appCtx = appCanvas.getContext("2d", { willReadFrequently: true });
+
+    const parseColorToRgb = (colorStr: string): string => {
+      if (!colorStr) return "rgba(0,0,0,0)";
+      if (colorStr.startsWith("rgb") || colorStr.startsWith("#")) {
+        return colorStr;
+      }
+      try {
+        if (appCtx) {
+          appCtx.clearRect(0, 0, 1, 1);
+          appCtx.fillStyle = colorStr;
+          appCtx.fillRect(0, 0, 1, 1);
+          const imgData = appCtx.getImageData(0, 0, 1, 1).data;
+          const r = imgData[0];
+          const g = imgData[1];
+          const b = imgData[2];
+          const a = (imgData[3] / 255).toFixed(3);
+          return `rgba(${r}, ${g}, ${b}, ${a})`;
+        }
+      } catch (e) {
+        console.warn("App color conversion failed for color:", colorStr, e);
+      }
+      return "rgba(0,0,0,0)";
+    };
+
+    return new Proxy(style, {
+      get(target, prop) {
+        if (prop === 'getPropertyValue') {
+          return function(propertyName: string) {
+            const val = target.getPropertyValue(propertyName);
+            if (val && (val.includes("oklch") || val.includes("oklab"))) {
+              return parseColorToRgb(val);
+            }
+            return val;
+          };
+        }
+        const val = (target as any)[prop];
+        if (typeof val === "function") {
+          return (val as Function).bind(target);
+        }
+        if (typeof val === "string" && (val.includes("oklch") || val.includes("oklab"))) {
+          return parseColorToRgb(val);
+        }
+        return val;
+      }
+    });
+  };
+
   const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [exportRange, setExportRange] = useState<"current" | "entire">("entire");
+  const [exportStatusPDF, setExportStatusPDF] = useState("");
 
   const handleDirectExportPDF = async () => {
-    const el = document.getElementById("book-leaf-container");
-    if (!el) {
-      alert("未能在页面上找到书页！请确认页面上已加载古卷。");
-      return;
-    }
+    const originalGetComputedStyle = window.getComputedStyle;
 
     try {
       setIsExportingPDF(true);
       triggerPluck(8);
+      setExportStatusPDF("正在校正古册排版...");
 
-      // Wait keyframe cycles to settle
+      // Wait a little bit for rendering
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      const canvas = await html2canvas(el, {
-        scale: 2.5, // High resolution crisp lines
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: null,
-        logging: false,
-      });
+      // Temporarily override computed styles to intercept oklch/oklab values to sRGB equivalent
+      window.getComputedStyle = function (element: Element, pseudoElt?: string | null) {
+        const style = originalGetComputedStyle.call(window, element, pseudoElt || null);
+        return getStyleProxyApp(style);
+      };
 
-      const imgData = canvas.toDataURL("image/jpeg", 0.98);
+      const isDualPage = config.showCenterLine;
+      const pdfWidth = isDualPage ? 400 : 200;
+      const pdfHeight = 300;
+      const orientation = isDualPage ? "landscape" : "portrait";
+
       const pdf = new jsPDF({
-        orientation: "landscape",
-        unit: "pt",
-        format: [canvas.width, canvas.height],
+        orientation: orientation,
+        unit: "mm",
+        format: [pdfWidth, pdfHeight],
       });
 
-      pdf.addImage(imgData, "JPEG", 0, 0, canvas.width, canvas.height);
-      const fileName = `《${activeBook?.title || "寒山古卷"}》_第${currentPageIndex + 1}叶_${activeBook?.author || "佚名"}.pdf`;
-      pdf.save(fileName);
-      triggerPluck(5);
-      
-      // Close modal after successful export
-      setShowPrintModal(false);
+      if (exportRange === "current") {
+        setExportStatusPDF(`正在印制第 ${currentPageIndex === 0 ? "封面" : currentPageIndex} 叶...`);
+        const el = document.getElementById("book-leaf-container");
+        if (!el) {
+          alert("无法获取书页容器！");
+          return;
+        }
+
+        const canvas = await html2canvas(el, {
+          scale: 2.5,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: null,
+          logging: false,
+          onclone: (clonedDoc) => {
+            const clonedEl = clonedDoc.getElementById(el.id);
+            if (!clonedEl) return;
+            // Copy canvas pixel data to cloned document
+            const originalCanvases = el.querySelectorAll("canvas");
+            const clonedCanvases = clonedEl.querySelectorAll("canvas");
+            originalCanvases.forEach((origCanvas, idx) => {
+              const clonedCanvas = clonedCanvases[idx];
+              if (clonedCanvas) {
+                try {
+                  const img = clonedDoc.createElement("img");
+                  img.src = (origCanvas as HTMLCanvasElement).toDataURL("image/png");
+                  img.className = clonedCanvas.className;
+                  img.style.cssText = clonedCanvas.style.cssText;
+                  img.style.position = "absolute";
+                  img.style.left = "0";
+                  img.style.top = "0";
+                  img.style.width = "100%";
+                  img.style.height = "100%";
+                  img.style.zIndex = "10";
+                  clonedCanvas.parentNode?.replaceChild(img, clonedCanvas);
+                } catch (e) {
+                  console.error("Failed to copy canvas to clone in App current page export:", e);
+                }
+              }
+            });
+
+            const styleTags = clonedDoc.querySelectorAll("style");
+            styleTags.forEach((styleTag) => {
+              if (styleTag.textContent) {
+                styleTag.textContent = styleTag.textContent
+                  .replace(/oklch\([^)]+\)/g, "rgba(0,0,0,0)")
+                  .replace(/oklab\([^)]+\)/g, "rgba(0,0,0,0)");
+              }
+            });
+            const clonedWindow = clonedDoc.defaultView;
+            if (clonedWindow) {
+              const originalClonedGetComputedStyle = clonedWindow.getComputedStyle;
+              clonedWindow.getComputedStyle = function (element: Element, pseudoElt?: string | null) {
+                const style = originalClonedGetComputedStyle.call(clonedWindow, element, pseudoElt || null);
+                return getStyleProxyApp(style);
+              };
+            }
+          },
+        });
+
+        const imgData = canvas.toDataURL("image/jpeg", 0.98);
+        pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
+        const leafName = currentPageIndex === 0 ? "封面" : `第${currentPageIndex}叶`;
+        const fileName = `《${activeBook?.title || "寒山古卷"}》_${leafName}_${activeBook?.author || "佚名"}.pdf`;
+        pdf.save(fileName);
+        setShowPrintModal(false);
+      } else {
+        // Entire book sequential export query by offscreen containers
+        for (let i = 0; i < activeBookTotalPages; i++) {
+          const leafLabel = i === 0 ? "书首·封面" : `第 ${i} 叶`;
+          setExportStatusPDF(`正在印制${leafLabel} (共 ${activeBookTotalPages} 页)...`);
+          
+          await new Promise((resolve) => setTimeout(resolve, 80)); // let threads breathe
+
+          const el = document.getElementById(`book-leaf-container-export-page-${i}`);
+          if (!el) {
+            console.warn(`Export page elements for index ${i} not found!`);
+            continue;
+          }
+
+          const canvas = await html2canvas(el, {
+            scale: 2.5,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: null,
+            logging: false,
+            onclone: (clonedDoc) => {
+              const clonedEl = clonedDoc.getElementById(el.id);
+              if (!clonedEl) return;
+              // Copy canvas pixel data to cloned document
+              const originalCanvases = el.querySelectorAll("canvas");
+              const clonedCanvases = clonedEl.querySelectorAll("canvas");
+              originalCanvases.forEach((origCanvas, idx) => {
+                const clonedCanvas = clonedCanvases[idx];
+                if (clonedCanvas) {
+                  try {
+                    const img = clonedDoc.createElement("img");
+                    img.src = (origCanvas as HTMLCanvasElement).toDataURL("image/png");
+                    img.className = clonedCanvas.className;
+                    img.style.cssText = clonedCanvas.style.cssText;
+                    img.style.position = "absolute";
+                    img.style.left = "0";
+                    img.style.top = "0";
+                    img.style.width = "100%";
+                    img.style.height = "100%";
+                    img.style.zIndex = "10";
+                    clonedCanvas.parentNode?.replaceChild(img, clonedCanvas);
+                  } catch (e) {
+                    console.error("Failed to copy canvas to clone in App book export:", e);
+                  }
+                }
+              });
+
+              const styleTags = clonedDoc.querySelectorAll("style");
+              styleTags.forEach((styleTag) => {
+                if (styleTag.textContent) {
+                  styleTag.textContent = styleTag.textContent
+                    .replace(/oklch\([^)]+\)/g, "rgba(0,0,0,0)")
+                    .replace(/oklab\([^)]+\)/g, "rgba(0,0,0,0)");
+                }
+              });
+              const clonedWindow = clonedDoc.defaultView;
+              if (clonedWindow) {
+                const originalClonedGetComputedStyle = clonedWindow.getComputedStyle;
+                clonedWindow.getComputedStyle = function (element: Element, pseudoElt?: string | null) {
+                  const style = originalClonedGetComputedStyle.call(clonedWindow, element, pseudoElt || null);
+                  return getStyleProxyApp(style);
+                };
+              }
+            },
+          });
+
+          const imgData = canvas.toDataURL("image/jpeg", 0.95);
+          if (i > 0) {
+            pdf.addPage([pdfWidth, pdfHeight], orientation);
+          }
+          pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
+        }
+
+        const fileName = `《${activeBook?.title || "寒山古卷"}》_全书合卷_${activeBook?.author || "佚名"}.pdf`;
+        pdf.save(fileName);
+        setShowPrintModal(false);
+      }
     } catch (error) {
       console.error("Direct PDF export failed:", error);
-      alert("直接下载 PDF 失败，请尝试传统打印或在新标签页中打开！");
+      alert("极速印制 PDF 失败，已为您退回编辑台！");
     } finally {
+      window.getComputedStyle = originalGetComputedStyle;
       setIsExportingPDF(false);
+      setExportStatusPDF("");
     }
   };
 
@@ -616,6 +915,7 @@ export default function App() {
 
             {activeTab === "scribe" && activeBook && (
               <TextEditor
+                allBooks={books}
                 book={activeBook}
                 onUpdateBook={handleUpdateActiveBook}
               />
@@ -685,6 +985,53 @@ export default function App() {
                   </li>
                 </ul>
               </div>
+
+              {/* Export scope selector */}
+              <div className="bg-[#faf8f3] border-2 border-[#8b4513]/40 p-4 rounded-xl flex flex-col gap-3">
+                <span className="font-bold text-[#8b4513] text-[13px] flex items-center gap-1.5">
+                  <Download className="w-4 h-4 text-[#8b4513]" />
+                  请指定存制导出范围：
+                </span>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => {
+                      setExportRange("current");
+                      triggerPluck(1);
+                    }}
+                    type="button"
+                    className={`p-2.5 rounded-lg border font-serif text-xs font-bold transition flex flex-col items-center gap-1 cursor-pointer ${
+                      exportRange === "current"
+                        ? "bg-[#8b4513]/10 border-[#8b4513] text-[#8b4513]"
+                        : "bg-white/60 border-[#dcd7c9] text-[#7c6a5a] hover:bg-[#e8e4d9]/30"
+                    }`}
+                  >
+                    <span>仅导出当前叶</span>
+                    <span className="text-[10px] text-stone-400 font-normal">单叶朱线红印版本</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setExportRange("entire");
+                      triggerPluck(1);
+                    }}
+                    type="button"
+                    className={`p-2.5 rounded-lg border font-serif text-xs font-bold transition flex flex-col items-center gap-1 cursor-pointer ${
+                      exportRange === "entire"
+                        ? "bg-[#A61B1B]/10 border-[#A61B1B] text-[#A61B1B]"
+                        : "bg-white/60 border-[#dcd7c9] text-[#7c6a5a] hover:bg-[#e8e4d9]/30"
+                    }`}
+                  >
+                    <span>装订全书古本</span>
+                    <span className="text-[10px] text-stone-400 font-normal">合卷共 {activeBookTotalPages} 页</span>
+                  </button>
+                </div>
+              </div>
+
+              {isExportingPDF && exportStatusPDF && (
+                <div className="p-3 bg-stone-100 border border-stone-200 rounded-lg text-center flex flex-col items-center justify-center gap-2">
+                  <div className="w-5 h-5 border-2 border-[#8b4513]/30 border-t-[#8b4513] rounded-full animate-spin" />
+                  <span className="text-xs text-[#8b4513] font-bold font-mono">{exportStatusPDF}</span>
+                </div>
+              )}
 
               {/* Confirm trigger button */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-3 border-t border-[#dcd7c9]/40 text-xs">

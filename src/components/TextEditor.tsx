@@ -1,13 +1,14 @@
 import React, { useState } from "react";
 import { Book } from "../types";
-import { Sparkles, FileText, ChevronRight, Edit3, Type, Info, Check, HelpCircle, RefreshCw } from "lucide-react";
+import { Sparkles, FileText, ChevronRight, Edit3, Type, Info, Check, HelpCircle, RefreshCw, Layers } from "lucide-react";
 
 interface TextEditorProps {
+  allBooks?: Book[];
   book: Book;
   onUpdateBook: (updated: Book) => void;
 }
 
-export const TextEditor: React.FC<TextEditorProps> = ({ book, onUpdateBook }) => {
+export const TextEditor: React.FC<TextEditorProps> = ({ allBooks = [], book, onUpdateBook }) => {
   const [activeTab, setActiveTab] = useState<"content" | "meta" | "ai">("content");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAction, setAiAction] = useState<string | null>(null);
@@ -15,6 +16,10 @@ export const TextEditor: React.FC<TextEditorProps> = ({ book, onUpdateBook }) =>
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [translationDirection, setTranslationDirection] = useState<"modernToClassical" | "classicalToModern">("modernToClassical");
+
+  const [showImportMenu, setShowImportMenu] = useState(false);
+  const [selectedBooksForImport, setSelectedBooksForImport] = useState<string[]>([]);
+  const [insertPageBreakOnImport, setInsertPageBreakOnImport] = useState(true);
 
   const handleChange = (field: keyof Book, value: string) => {
     onUpdateBook({
@@ -47,6 +52,25 @@ export const TextEditor: React.FC<TextEditorProps> = ({ book, onUpdateBook }) =>
       textarea.focus();
       textarea.setSelectionRange(start, start + wrapped.length);
     }, 50);
+  };
+
+  const handleImportAndMerge = () => {
+    if (selectedBooksForImport.length === 0) return;
+    
+    const separator = insertPageBreakOnImport ? "\n\n===换页===\n\n" : "\n\n";
+
+    const importedContents = allBooks
+      .filter((b) => selectedBooksForImport.includes(b.id))
+      .map((b) => `${b.title}\n${b.content}`)
+      .join(separator);
+
+    const newContent = book.content.trim() 
+      ? `${book.content}${separator}${importedContents}` 
+      : importedContents;
+
+    handleChange("content", newContent);
+    setShowImportMenu(false);
+    setSelectedBooksForImport([]);
   };
 
   // Server AI trigger proxies
@@ -191,16 +215,86 @@ export const TextEditor: React.FC<TextEditorProps> = ({ book, onUpdateBook }) =>
         {/* Tab 1: Text Editor Scroll */}
         {activeTab === "content" && (
           <div className="flex-1 flex flex-col space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] text-[#7c6a5a] font-serif">请输入一篇文章，使用双层半角括号包裹注释： `((我的批注内容))`，即可编译为双行夹注。</span>
-              <button
-                onClick={handleWrapSelectedTextWithAnnotation}
-                className="px-2 py-1 border border-[#8b4513]/60 hover:bg-[#e8e4d9] text-[10px] rounded font-serif text-[#8b4513] flex items-center gap-1 cursor-pointer transition-colors"
-                title="圈定字符转为小字双行注"
-              >
-                <Type className="w-3 h-3" />
-                框选插入注解
-              </button>
+            <div className="flex items-center justify-between relative">
+              <span className="text-[11px] text-[#7c6a5a] font-serif leading-relaxed">
+                请输入一篇文章，使用双层半角括号包裹注释： `((我的批注内容))`，即可编译为双行夹注。<br/>段首添加 <b>【顶格】</b> 可强制该段落取消缩进定格排版。换页可以单独占一行输入 <b>===换页===</b>。
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowImportMenu(!showImportMenu)}
+                  className="px-2 py-1 border border-[#8b4513]/60 hover:bg-[#e8e4d9] text-[10px] rounded font-serif text-[#8b4513] flex items-center gap-1 cursor-pointer transition-colors"
+                  title="基于多篇文章进行同时合并排版"
+                >
+                  <Layers className="w-3 h-3" />
+                  导入并排文章
+                </button>
+                <button
+                  onClick={handleWrapSelectedTextWithAnnotation}
+                  className="px-2 py-1 border border-[#8b4513]/60 hover:bg-[#e8e4d9] text-[10px] rounded font-serif text-[#8b4513] flex items-center gap-1 cursor-pointer transition-colors"
+                  title="圈定字符转为小字双行注"
+                >
+                  <Type className="w-3 h-3" />
+                  框选插入注解
+                </button>
+              </div>
+
+              {/* Import Menu Popover */}
+              {showImportMenu && (
+                <div className="absolute right-0 top-8 w-64 bg-[#fcfaf2] border border-[#8b4513] rounded-lg shadow-xl z-20 p-3 font-serif flex flex-col gap-2">
+                  <div className="text-[11px] font-bold text-[#8b4513]">选择需要合并排版的文章：</div>
+                  <div className="max-h-40 overflow-y-auto flex flex-col gap-1 border border-[#dcd7c9] p-1 rounded bg-white">
+                    {allBooks.filter(b => b.id !== book.id).length > 0 ? (
+                      allBooks.filter(b => b.id !== book.id).map(b => (
+                        <label key={b.id} className="flex items-center gap-2 cursor-pointer hover:bg-[#e8e4d9]/50 p-1 rounded text-xs text-[#3d2b1f]">
+                          <input 
+                            type="checkbox" 
+                            className="accent-[#8b4513]"
+                            checked={selectedBooksForImport.includes(b.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedBooksForImport([...selectedBooksForImport, b.id]);
+                              } else {
+                                setSelectedBooksForImport(selectedBooksForImport.filter(id => id !== b.id));
+                              }
+                            }}
+                          />
+                          <span className="truncate">{b.title}</span>
+                        </label>
+                      ))
+                    ) : (
+                      <span className="text-[10px] text-stone-400 p-2">书架没有其他文章</span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 px-1 py-1">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-xs text-[#5c4a3d] hover:text-[#8b4513]">
+                      <input 
+                        type="checkbox" 
+                        className="accent-[#8b4513]"
+                        checked={insertPageBreakOnImport}
+                        onChange={(e) => setInsertPageBreakOnImport(e.target.checked)}
+                      />
+                      <span>文章之间自动插入换页符</span>
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-2 mt-1">
+                    <button 
+                      onClick={() => setShowImportMenu(false)}
+                      className="text-[10px] px-2 py-1 border border-[#dcd7c9] rounded hover:bg-[#e8e4d9] text-[#7c6a5a]"
+                    >
+                      取消
+                    </button>
+                    <button 
+                      onClick={handleImportAndMerge}
+                      disabled={selectedBooksForImport.length === 0}
+                      className="text-[10px] px-2 py-1 bg-[#8b4513] text-white rounded hover:bg-[#6b3410] disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      载入选中文章
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <textarea

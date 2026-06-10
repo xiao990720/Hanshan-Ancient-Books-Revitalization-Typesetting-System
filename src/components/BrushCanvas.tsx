@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
-import { Edit2, Eye, CircleDot, RefreshCw, Eraser } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
 interface BrushCanvasProps {
   pageIndex: number;
@@ -64,17 +64,6 @@ export const BrushCanvas: React.FC<BrushCanvasProps> = ({
     }
   }, [width, height, savedDrawing]);
 
-  if (brushType === "none") {
-    // Return thin pointer-events-none display layer when drawing is inactive
-    return savedDrawing ? (
-      <img
-        src={savedDrawing}
-        alt={`Page ${pageIndex} handwriting`}
-        className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
-      />
-    ) : null;
-  }
-
   const getCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
@@ -92,9 +81,10 @@ export const BrushCanvas: React.FC<BrushCanvasProps> = ({
       clientY = e.clientY;
     }
 
+    // Scale coordinates accurately according to standard width and height parameters
     return {
-      x: clientX - rect.left,
-      y: clientY - rect.top,
+      x: ((clientX - rect.left) / rect.width) * width,
+      y: ((clientY - rect.top) / rect.height) * height,
       time: Date.now()
     };
   };
@@ -133,7 +123,6 @@ export const BrushCanvas: React.FC<BrushCanvasProps> = ({
     const last = lastPointRef.current;
 
     // Calligraphic tapered brush calculations based on drag speed
-    // speed = distance / time
     const dx = coords.x - last.x;
     const dy = coords.y - last.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
@@ -194,29 +183,33 @@ export const BrushCanvas: React.FC<BrushCanvasProps> = ({
     onSaveDrawing(pageIndex, "");
   };
 
+  const isInteractive = brushType !== "none";
+
   return (
-    <div className="absolute inset-0 w-full h-full z-10 select-none">
+    <div className="absolute inset-0 w-full h-full z-10 select-none pointer-events-none">
       <canvas
         ref={canvasRef}
-        onMouseDown={startDrawing}
-        onMouseMove={draw}
-        onMouseUp={stopDrawing}
-        onMouseLeave={stopDrawing}
-        onTouchStart={startDrawing}
-        onTouchMove={draw}
-        onTouchEnd={stopDrawing}
-        className="absolute inset-0 w-full h-full cursor-cell"
+        onMouseDown={isInteractive ? startDrawing : undefined}
+        onMouseMove={isInteractive ? draw : undefined}
+        onMouseUp={isInteractive ? stopDrawing : undefined}
+        onMouseLeave={isInteractive ? stopDrawing : undefined}
+        onTouchStart={isInteractive ? startDrawing : undefined}
+        onTouchMove={isInteractive ? draw : undefined}
+        onTouchEnd={isInteractive ? stopDrawing : undefined}
+        className={`absolute inset-0 w-full h-full ${isInteractive ? "cursor-cell pointer-events-auto" : "pointer-events-none"}`}
         style={{ touchAction: "none" }}
       />
 
       {/* Mini floating quick-wipe widget inside drawable pages */}
-      <button
-        onClick={clearCanvas}
-        title="清空当前叶上所有批注"
-        className="absolute bottom-2 right-2 bg-stone-900/80 hover:bg-red-950 hover:text-red-100 p-1 rounded-full text-[10px] text-stone-500 hover:shadow z-20 transition border border-stone-800 pointer-events-auto cursor-pointer flex items-center justify-center w-5 h-5"
-      >
-        <RefreshCw className="w-3 h-3" />
-      </button>
+      {isInteractive && (
+        <button
+          onClick={clearCanvas}
+          title="清空当前叶上所有批注"
+          className="absolute bottom-2 right-2 bg-stone-900/80 hover:bg-red-950 hover:text-red-100 p-1 rounded-full text-[10px] text-stone-500 hover:shadow z-20 transition border border-stone-800 pointer-events-auto cursor-pointer flex items-center justify-center w-5 h-5"
+        >
+          <RefreshCw className="w-3 h-3" />
+        </button>
+      )}
     </div>
   );
 };

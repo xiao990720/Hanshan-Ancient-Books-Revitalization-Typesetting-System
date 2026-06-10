@@ -6,6 +6,63 @@ import { generateSealDataUrl } from "../utils/sealGenerator";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 
+// Safe oklch/oklab conversion to rgb/rgba using 1x1 canvas context
+let tempCanvas: HTMLCanvasElement | null = null;
+let tempCtx: CanvasRenderingContext2D | null = null;
+
+function parseAnyColorToRgb(colorStr: string): string {
+  if (!colorStr) return "rgba(0,0,0,0)";
+  if (colorStr.startsWith("rgb") || colorStr.startsWith("#")) {
+    return colorStr;
+  }
+  try {
+    if (!tempCanvas) {
+      tempCanvas = document.createElement("canvas");
+      tempCanvas.width = 1;
+      tempCanvas.height = 1;
+      tempCtx = tempCanvas.getContext("2d", { willReadFrequently: true });
+    }
+    if (tempCtx) {
+      tempCtx.clearRect(0, 0, 1, 1);
+      tempCtx.fillStyle = colorStr;
+      tempCtx.fillRect(0, 0, 1, 1);
+      const imgData = tempCtx.getImageData(0, 0, 1, 1).data;
+      const r = imgData[0];
+      const g = imgData[1];
+      const b = imgData[2];
+      const a = (imgData[3] / 255).toFixed(3);
+      return `rgba(${r}, ${g}, ${b}, ${a})`;
+    }
+  } catch (e) {
+    console.warn("Color conversion failed for color:", colorStr, e);
+  }
+  return "rgba(0,0,0,0)";
+}
+
+function getStyleProxy(style: CSSStyleDeclaration): CSSStyleDeclaration {
+  return new Proxy(style, {
+    get(target, prop) {
+      if (prop === 'getPropertyValue') {
+        return function(propertyName: string) {
+          const val = target.getPropertyValue(propertyName);
+          if (val && (val.includes("oklch") || val.includes("oklab"))) {
+            return parseAnyColorToRgb(val);
+          }
+          return val;
+        };
+      }
+      const val = (target as any)[prop];
+      if (typeof val === "function") {
+        return (val as Function).bind(target);
+      }
+      if (typeof val === "string" && (val.includes("oklch") || val.includes("oklab"))) {
+        return parseAnyColorToRgb(val);
+      }
+      return val;
+    }
+  });
+}
+
 interface BookViewerProps {
   book: Book;
   config: LayoutConfig;
@@ -24,6 +81,7 @@ interface TextCharToken {
 }
 
 interface TextLine {
+  isPageBreak?: boolean;
   tokens: TextCharToken[];
   annotations?: {
     index: number; // character index in this line where notes insert
@@ -46,44 +104,188 @@ export const BookViewer: React.FC<BookViewerProps> = ({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [activeSealId, setActiveSealId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [showExportScopeModal, setShowExportScopeModal] = useState(false);
+  const [exportStatus, setExportStatus] = useState("");
 
-  const handleExportPDF = async () => {
-    const el = document.getElementById("book-leaf-container");
-    if (!el) return;
+  const handleExportPDF = () => {
+    setShowExportScopeModal(true);
+  };
+
+  const triggerExportPDF = async (scope: "current" | "entire") => {
+    const originalGetComputedStyle = window.getComputedStyle;
 
     try {
       setIsExporting(true);
-      // Wait keyframe cycles to settle
+      setExportStatus("正在校正古册排版...");
+
+      // Wait a little bit for rendering
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      const canvas = await html2canvas(el, {
-        scale: 2.5, // High resolution crisp lines
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: null,
-        logging: false,
-      });
+      // Temporarily override computed styles to intercept oklch/oklab values to sRGB equivalent
+      window.getComputedStyle = function (element: Element, pseudoElt?: string | null) {
+        const style = originalGetComputedStyle.call(window, element, pseudoElt || null);
+        return getStyleProxy(style);
+      };
 
-      const imgData = canvas.toDataURL("image/jpeg", 0.98);
-      
       const isDualPage = config.showCenterLine;
       const pdfWidth = isDualPage ? 400 : 200;
       const pdfHeight = 300;
+      const orientation = isDualPage ? "landscape" : "portrait";
 
       const pdf = new jsPDF({
-        orientation: isDualPage ? "landscape" : "portrait",
+        orientation: orientation,
         unit: "mm",
         format: [pdfWidth, pdfHeight],
       });
 
-      pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
-      const leafName = currentPageIndex === 0 ? "封面" : `第${currentPageIndex}叶`;
-      const fileName = `《${book.title}》_${leafName}_${book.author || "佚名"}.pdf`;
-      pdf.save(fileName);
+      if (scope === "current") {
+        setExportStatus(`正在印制第 ${currentPageIndex === 0 ? "封面" : currentPageIndex} 叶...`);
+        const el = document.getElementById("book-leaf-container");
+        if (!el) {
+          alert("无法获取书页容器！");
+          return;
+        }
+
+        const canvas = await html2canvas(el, {
+          scale: 2.5,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: null,
+          logging: false,
+          onclone: (clonedDoc) => {
+            const clonedEl = clonedDoc.getElementById(el.id);
+            if (!clonedEl) return;
+            // Copy canvas pixel data to cloned document
+            const originalCanvases = el.querySelectorAll("canvas");
+            const clonedCanvases = clonedEl.querySelectorAll("canvas");
+            originalCanvases.forEach((origCanvas, idx) => {
+              const clonedCanvas = clonedCanvases[idx];
+              if (clonedCanvas) {
+                try {
+                  const img = clonedDoc.createElement("img");
+                  img.src = (origCanvas as HTMLCanvasElement).toDataURL("image/png");
+                  img.className = clonedCanvas.className;
+                  img.style.cssText = clonedCanvas.style.cssText;
+                  img.style.position = "absolute";
+                  img.style.left = "0";
+                  img.style.top = "0";
+                  img.style.width = "100%";
+                  img.style.height = "100%";
+                  img.style.zIndex = "10";
+                  clonedCanvas.parentNode?.replaceChild(img, clonedCanvas);
+                } catch (e) {
+                  console.error("Failed to copy canvas to clone in current page export:", e);
+                }
+              }
+            });
+
+            const styleTags = clonedDoc.querySelectorAll("style");
+            styleTags.forEach((styleTag) => {
+              if (styleTag.textContent) {
+                styleTag.textContent = styleTag.textContent
+                  .replace(/oklch\([^)]+\)/g, "rgba(0,0,0,0)")
+                  .replace(/oklab\([^)]+\)/g, "rgba(0,0,0,0)");
+              }
+            });
+            const clonedWindow = clonedDoc.defaultView;
+            if (clonedWindow) {
+              const originalClonedGetComputedStyle = clonedWindow.getComputedStyle;
+              clonedWindow.getComputedStyle = function (element: Element, pseudoElt?: string | null) {
+                const style = originalClonedGetComputedStyle.call(clonedWindow, element, pseudoElt || null);
+                return getStyleProxy(style);
+              };
+            }
+          },
+        });
+
+        const imgData = canvas.toDataURL("image/jpeg", 0.98);
+        pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
+        const leafName = currentPageIndex === 0 ? "封面" : `第${currentPageIndex}叶`;
+        const fileName = `《${book.title}》_${leafName}_${book.author || "佚名"}.pdf`;
+        pdf.save(fileName);
+      } else {
+        // Entire book sequential export
+        for (let i = 0; i < totalPages; i++) {
+          const leafLabel = i === 0 ? "书首·封面" : `第 ${i} 叶`;
+          setExportStatus(`正在印制${leafLabel} (共 ${totalPages} 页)...`);
+          
+          await new Promise((resolve) => setTimeout(resolve, 80)); // let threads breathe
+
+          const el = document.getElementById(`book-leaf-container-export-page-${i}`);
+          if (!el) {
+            console.warn(`Export page elements for index ${i} not found!`);
+            continue;
+          }
+
+          const canvas = await html2canvas(el, {
+            scale: 2.5,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: null,
+            logging: false,
+            onclone: (clonedDoc) => {
+              const clonedEl = clonedDoc.getElementById(el.id);
+              if (!clonedEl) return;
+              // Copy canvas pixel data to cloned document
+              const originalCanvases = el.querySelectorAll("canvas");
+              const clonedCanvases = clonedEl.querySelectorAll("canvas");
+              originalCanvases.forEach((origCanvas, idx) => {
+                const clonedCanvas = clonedCanvases[idx];
+                if (clonedCanvas) {
+                  try {
+                    const img = clonedDoc.createElement("img");
+                    img.src = (origCanvas as HTMLCanvasElement).toDataURL("image/png");
+                    img.className = clonedCanvas.className;
+                    img.style.cssText = clonedCanvas.style.cssText;
+                    img.style.position = "absolute";
+                    img.style.left = "0";
+                    img.style.top = "0";
+                    img.style.width = "100%";
+                    img.style.height = "100%";
+                    img.style.zIndex = "10";
+                    clonedCanvas.parentNode?.replaceChild(img, clonedCanvas);
+                  } catch (e) {
+                    console.error("Failed to copy canvas to clone in book export:", e);
+                  }
+                }
+              });
+
+              const styleTags = clonedDoc.querySelectorAll("style");
+              styleTags.forEach((styleTag) => {
+                if (styleTag.textContent) {
+                  styleTag.textContent = styleTag.textContent
+                    .replace(/oklch\([^)]+\)/g, "rgba(0,0,0,0)")
+                    .replace(/oklab\([^)]+\)/g, "rgba(0,0,0,0)");
+                }
+              });
+              const clonedWindow = clonedDoc.defaultView;
+              if (clonedWindow) {
+                const originalClonedGetComputedStyle = clonedWindow.getComputedStyle;
+                clonedWindow.getComputedStyle = function (element: Element, pseudoElt?: string | null) {
+                  const style = originalClonedGetComputedStyle.call(clonedWindow, element, pseudoElt || null);
+                  return getStyleProxy(style);
+                };
+              }
+            },
+          });
+
+          const imgData = canvas.toDataURL("image/jpeg", 0.95);
+          if (i > 0) {
+            pdf.addPage([pdfWidth, pdfHeight], orientation);
+          }
+          pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
+        }
+
+        const fileName = `《${book.title}》_全书合卷_${book.author || "佚名"}.pdf`;
+        pdf.save(fileName);
+      }
     } catch (error) {
       console.error("Direct PDF export failed:", error);
+      alert("极速印制 PDF 失败，已为您退回编辑台！");
     } finally {
+      window.getComputedStyle = originalGetComputedStyle;
       setIsExporting(false);
+      setExportStatus("");
     }
   };
 
@@ -142,6 +344,18 @@ export const BookViewer: React.FC<BookViewerProps> = ({
     };
 
     paragraphs.forEach((p, pIdx) => {
+      // Manual Page Break
+      if (p === "===换页===") {
+        lines.push({ isPageBreak: true, tokens: [] });
+        return;
+      }
+
+      let forceZeroIndent = false;
+      if (p.startsWith("【顶格】") || p.startsWith("【定格】")) {
+        forceZeroIndent = true;
+        p = p.substring(4);
+      }
+
       // Smart traditional indentation
       let indentSpaces = 1; // Default traditional body text indent: 1 space ("低一格")
       
@@ -171,7 +385,9 @@ export const BookViewer: React.FC<BookViewerProps> = ({
       // Author/Lower title block detection: short, contains key authorship identifiers, or immediately follows the title
       const isAuthor = isShort && !hasPunct && (isAuthorIndicator || (pIdx === 1 && !hasPunct));
 
-      if (isTitle) {
+      if (forceZeroIndent) {
+        indentSpaces = 0;
+      } else if (isTitle) {
         indentSpaces = 0; // "标题要定格" -> No indent space
       } else if (isAuthor) {
         indentSpaces = 4; // lowered by 4 spaces
@@ -267,6 +483,14 @@ export const BookViewer: React.FC<BookViewerProps> = ({
     let currentLeafLines: TextLine[] = [];
 
     parsedLines.forEach((line) => {
+      if (line.isPageBreak) {
+        if (currentLeafLines.length > 0) {
+          list.push([...currentLeafLines]);
+          currentLeafLines = [];
+        }
+        return; // skip the page break token itself
+      }
+
       currentLeafLines.push(line);
       if (currentLeafLines.length >= config.linesPerPage) {
         list.push([...currentLeafLines]);
@@ -370,8 +594,8 @@ export const BookViewer: React.FC<BookViewerProps> = ({
     return chns[tens] + "十" + (units !== 0 ? chns[units] : "");
   };
 
-  const renderColumn = (colIdx: number) => {
-    const line = pages[currentPageIndex - 1]?.[colIdx];
+  const renderColumn = (colIdx: number, pageIdx: number = currentPageIndex) => {
+    const line = pages[pageIdx - 1]?.[colIdx];
     return (
       <div
         key={colIdx}
@@ -420,32 +644,34 @@ export const BookViewer: React.FC<BookViewerProps> = ({
                   if (noteData) {
                     skippedCells = Math.max(noteData.subrows[0].length, noteData.subrows[1].length) - 1;
 
-                    // Stacking double columns horizontally side-by-side using flex inline
+                    // Stacking double columns horizontally side-by-side using robust inline-block
                     return (
-                      <div
+                      <span
                         key={`note-${charIdx}`}
-                        className="inline-flex flex-row leading-normal mx-0.5 justify-center items-start text-stone-500 z-5 scale-90"
+                        className="inline-block mx-0.5 text-stone-500 font-serif z-5"
                         style={{
-                          fontSize: "0.52em",
-                          lineHeight: "1.25",
-                          letterSpacing: "0.08em"
+                          fontSize: "0.51em",
+                          lineHeight: "1.2",
+                          letterSpacing: "0.04em",
+                          whiteSpace: "nowrap",
+                          verticalAlign: "top"
                         }}
                       >
                         {/* Subrow 1 */}
-                        <div className="flex flex-col items-center">
+                        <span className="inline-block text-center" style={{ width: "1.15em", verticalAlign: "top" }}>
                           {noteData.subrows[0].map((c, n1) => (
-                            <span key={`n1-${n1}`} className="w-auto h-auto leading-none mb-0.5 select-none">{c}</span>
+                            <span key={`n1-${n1}`} className="block w-full text-center leading-none mb-0.5 select-none">{c}</span>
                           ))}
-                        </div>
+                        </span>
                         {/* Gap spacer */}
-                        <div className="w-[1.5px]" />
+                        <span className="inline-block" style={{ width: "1px" }} />
                         {/* Subrow 2 */}
-                        <div className="flex flex-col items-center">
+                        <span className="inline-block text-center" style={{ width: "1.15em", verticalAlign: "top" }}>
                           {noteData.subrows[1].map((c, n2) => (
-                            <span key={`n2-${n2}`} className="w-auto h-auto leading-none mb-0.5 select-none">{c}</span>
+                            <span key={`n2-${n2}`} className="block w-full text-center leading-none mb-0.5 select-none">{c}</span>
                           ))}
-                        </div>
-                      </div>
+                        </span>
+                      </span>
                     );
                   }
                   return null;
@@ -505,7 +731,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
     );
   };
 
-  const renderCenterSpine = () => {
+  const renderCenterSpine = (pageIdx: number = currentPageIndex) => {
     return (
       <div
         className="w-12 mx-3 flex flex-col justify-between items-center py-2 select-none border-l border-r pointer-events-none z-5 relative shrink-0"
@@ -516,18 +742,19 @@ export const BookViewer: React.FC<BookViewerProps> = ({
       >
         {/* Spine fishtail top */}
         {config.showFishtail && (
-          <div
-            className="w-5 h-2.5 bg-current select-none opacity-80 mb-2 shrink-0"
-            style={{
-              clipPath: "polygon(0% 0%, 100% 0%, 50% 100%)" // visual arrow down (鱼尾状)
-            }}
-          />
+          <svg
+            viewBox="0 0 20 10"
+            className="w-5 h-2.5 select-none opacity-80 mb-2 shrink-0"
+            style={{ fill: "currentColor" }}
+          >
+            <polygon points="0,0 20,0 10,10" />
+          </svg>
         )}
 
         {/* Vertical mini writing showing Book details & page count */}
         <div className="flex-1 flex flex-col items-center text-[10px] sm:text-[11px] font-serif leading-4 py-4 self-center select-none tracking-widest h-full justify-center shrink-0 min-h-[300px]">
           <div className="text-[11px] font-serif flex flex-col items-center gap-0.5 opacity-80 w-full shrink-0">
-            {currentPageIndex === 0 ? (
+            {pageIdx === 0 ? (
               <>
                 <span>扉</span>
                 <span>页</span>
@@ -535,7 +762,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
             ) : (
               <>
                 <span>第</span>
-                {toChineseNumerals(currentPageIndex).split("").map((c, i) => (
+                {toChineseNumerals(pageIdx).split("").map((c, i) => (
                   <span key={`spine-p-${i}`} className="font-serif font-bold">{c}</span>
                 ))}
                 <span>叶</span>
@@ -546,18 +773,19 @@ export const BookViewer: React.FC<BookViewerProps> = ({
 
         {/* Spine fishmouth bottom */}
         {config.showFishtail && (
-          <div
-            className="w-5 h-2.5 bg-current select-none opacity-80 mt-2 shrink-0"
-            style={{
-              clipPath: "polygon(0% 100%, 100% 100%, 50% 0%)" // visual arrow up
-            }}
-          />
+          <svg
+            viewBox="0 0 20 10"
+            className="w-5 h-2.5 select-none opacity-80 mt-2 shrink-0"
+            style={{ fill: "currentColor" }}
+          >
+            <polygon points="0,10 20,10 10,0" />
+          </svg>
         )}
       </div>
     );
   };
 
-  const renderCoverPageContents = () => {
+  const renderCoverPageContents = (pageIdx: number = currentPageIndex) => {
     const linesCount = config.linesPerPage;
     const isDual = config.showCenterLine;
 
@@ -709,7 +937,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
           </div>
 
           {/* Center Column border spine */}
-          {renderCenterSpine()}
+          {renderCenterSpine(pageIdx)}
 
           {/* Left Page: Preface Flap */}
           <div 
@@ -730,8 +958,233 @@ export const BookViewer: React.FC<BookViewerProps> = ({
     }
   };
 
+  const renderPageContent = (pageIdx: number) => {
+    if (pageIdx === 0) {
+      return renderCoverPageContents(pageIdx);
+    }
+
+    const linesCount = config.linesPerPage;
+    const rightCount = config.showCenterLine ? Math.ceil(linesCount / 2) : linesCount;
+    const leftCount = config.showCenterLine ? (linesCount - rightCount) : 0;
+
+    return (
+      <div className="flex-1 w-full flex flex-row items-stretch h-full relative z-10 animate-fade-in">
+        {/* Right Page (First half of RTL lines) */}
+        <div 
+          className="flex-1 flex flex-row items-stretch justify-around h-full"
+          style={{ width: config.showCenterLine ? `calc(50% - 24px)` : '100%' }}
+        >
+          {Array.from({ length: rightCount }).map((_, rIdx) => renderColumn(rIdx, pageIdx))}
+        </div>
+
+        {/* Centered Folding Spine Column (版心) */}
+        {config.showCenterLine && renderCenterSpine(pageIdx)}
+
+        {/* Left Page (Second half of RTL lines) */}
+        {config.showCenterLine && leftCount > 0 && (
+          <div 
+            className="flex-1 flex flex-row items-stretch justify-around h-full"
+            style={{ width: `calc(50% - 24px)` }}
+          >
+            {Array.from({ length: leftCount }).map((_, lIdx) => renderColumn(rightCount + lIdx, pageIdx))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderFullBookPage = (pageIdx: number, forExport: boolean = false) => {
+    const sizeClasses = forExport
+      ? (config.showCenterLine ? "w-[800px] h-[600px] min-w-[800px] min-h-[600px]" : "w-[400px] h-[600px] min-w-[400px] min-h-[600px]")
+      : (config.showCenterLine ? "aspect-[40/30] md:w-[800px] md:h-[600px] w-full" : "aspect-[20/30] md:w-[400px] md:h-[600px] w-full");
+
+    const paddingStyles = forExport
+      ? {
+          paddingTop: config.showCenterLine ? "100px" : "150px",
+          paddingBottom: config.showCenterLine ? "60px" : "90px",
+        }
+      : {
+          paddingTop: config.showCenterLine ? "12.5%" : "25%",
+          paddingBottom: config.showCenterLine ? "7.5%" : "15%",
+        };
+
+    return (
+      <div
+        id={forExport ? `book-leaf-container-export-page-${pageIdx}` : "book-leaf-container"}
+        onMouseMove={forExport ? undefined : (e) => handlePageMouseMove(e, pageIdx)}
+        onMouseUp={forExport ? undefined : handleSealDragEnd}
+        onMouseLeave={forExport ? undefined : handleSealDragEnd}
+        className={`relative ${scheme.bg} ${scheme.text} rounded-lg ${forExport ? "" : "shadow-xl"} flex select-none px-10 sm:px-12 overflow-hidden self-center shrink-0 ${sizeClasses} ${
+          config.borderStyle === "none"
+            ? "border-0 shadow-lg"
+            : config.borderStyle === "single"
+              ? `border-[3px] ${outerBorderColor}`
+              : `border-[6px] ${outerBorderColor}`
+        }`}
+        style={{
+          direction: "rtl",
+          ...paddingStyles,
+          boxSizing: "border-box"
+        }}
+      >
+        {/* High-fidelity Traditional Inner Frame (四周双边内细线) */}
+        {config.borderStyle === "double" && (
+          <div 
+            className="absolute pointer-events-none select-none z-0" 
+            style={{
+              top: '5px',
+              bottom: '5px',
+              left: '5px',
+              right: '5px',
+              border: `1px solid ${gridLineColor}`,
+              opacity: 0.75
+            }}
+          />
+        )}
+
+        {/* Content of the page */}
+        {renderPageContent(pageIdx)}
+
+        {/* Overlay: Interactive or Static stamp seals */}
+        {(book.seals || [])
+          .filter((bs) => bs.pageIndex === pageIdx)
+          .map((bs) => {
+            const sealTemplate = allSeals.find((s) => s.id === bs.sealId);
+            if (!sealTemplate) return null;
+
+            const isFocused = !forExport && activeSealId === bs.id;
+            const finalScale = bs.scale || 1.0;
+
+            return (
+              <div
+                key={bs.id}
+                onMouseDown={forExport ? undefined : (e) => handleSealDragStart(e, bs.id)}
+                className={`absolute select-all select-none origin-center ${forExport ? "" : "cursor-move"} transition-shadow z-20 group`}
+                style={{
+                  left: `${bs.xPct}%`,
+                  top: `${bs.yPct}%`,
+                  transform: `translate(-50%, -50%) scale(${finalScale})`,
+                  outline: isFocused ? "2px dashed #8b4513" : "none"
+                }}
+              >
+                <img
+                  src={sealTemplate.dataUrl || generateSealDataUrl(sealTemplate)}
+                  alt={sealTemplate.text}
+                  className="w-16 h-16 object-contain pointer-events-none drop-shadow-md select-none"
+                  referrerPolicy="no-referrer"
+                />
+
+                {/* Mini float seal adjust controls */}
+                {!forExport && (
+                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 flex items-center space-x-1 bg-[#f4f1ea] border border-[#dcd7c9] rounded p-1 shadow-md opacity-0 group-hover:opacity-100 transition pointer-events-auto select-none z-30">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        scaleStampedSeal(bs.id, -0.15);
+                      }}
+                      className="p-0.5 hover:bg-[#e8e4d9] rounded text-[#8b4513] pointer-events-auto cursor-pointer"
+                      title="缩章"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        scaleStampedSeal(bs.id, 0.15);
+                      }}
+                      className="p-0.5 hover:bg-[#e8e4d9] rounded text-[#8b4513] pointer-events-auto cursor-pointer"
+                      title="扩章"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteStampedSeal(bs.id);
+                      }}
+                      className="p-0.5 hover:bg-red-50 rounded text-[#A61B1B] pointer-events-auto cursor-pointer"
+                      title="起章 (移去盖印)"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+        {/* Hand painted overlays */}
+        <BrushCanvas
+          pageIndex={pageIdx}
+          width={config.showCenterLine ? 800 : 400}
+          height={600}
+          brushType={forExport ? "none" : brushType}
+          brushSize={brushSize}
+          savedDrawing={book.drawings ? book.drawings[pageIdx] : undefined}
+          onSaveDrawing={forExport ? undefined : (idx, dataUrl) => savePageSignature(idx, dataUrl)}
+        />
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col items-center w-full select-none" id="book-viewer">
+      {/* 1. Floating Select Scope Modal */}
+      {showExportScopeModal && (
+        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-[#faf8f3] border-4 border-[#8b4513] rounded-2xl max-w-sm w-full shadow-2xl p-6 font-serif relative transition-all">
+            <h3 className="text-[#8b4513] font-bold text-base sm:text-lg border-b border-[#dcd7c9] pb-2.5 mb-3.5 tracking-wider flex items-center gap-2">
+              <Download className="w-5 h-5" />
+              请选择印制导出范围
+            </h3>
+            
+            <p className="text-xs text-[#5c4a3c] mb-5 leading-relaxed">
+              书舍支持将当前您正在赏阅、已钤盖红印和朱墨批注的这一叶精美排版页导出，或将包括封面、提要在内的整部书册一次性按宣页规格装订导出为完整的 PDF 合卷。
+            </p>
+
+            <div className="flex flex-col gap-3 text-xs sm:text-sm">
+              <button
+                onClick={() => {
+                  setShowExportScopeModal(false);
+                  triggerExportPDF("current");
+                }}
+                className="w-full p-2.5 font-bold bg-[#8b4513]/10 hover:bg-[#8b4513]/25 text-[#8b4513] border border-[#8b4513]/30 rounded-lg cursor-pointer transition flex items-center justify-center gap-2"
+              >
+                <span>仅导出当前叶 (单叶排版本)</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowExportScopeModal(false);
+                  triggerExportPDF("entire");
+                }}
+                className="w-full p-2.5 font-bold bg-[#A61B1B] hover:bg-[#8e1717] text-white rounded-lg cursor-pointer shadow transition flex items-center justify-center gap-2 animate-pulse"
+              >
+                <span>极速装订整册古卷 (全卷 {totalPages} 页)</span>
+              </button>
+
+              <button
+                onClick={() => setShowExportScopeModal(false)}
+                className="w-full p-2 mt-1 text-xs text-stone-500 hover:text-[#8b4513] transition hover:bg-[#e8e4d9]/40 rounded-md cursor-pointer text-center"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Loading / Processing status display overlay */}
+      {isExporting && exportStatus && (
+        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in/70">
+          <div className="bg-[#faf8f3] border-2 border-[#8b4513] rounded-xl max-w-xs w-full shadow-2xl p-5 font-serif text-center relative">
+            <div className="mx-auto w-10 h-10 border-4 border-[#8b4513]/30 border-t-[#8b4513] rounded-full animate-spin mb-3" />
+            <h4 className="text-[#8b4513] font-bold text-sm tracking-wider mb-1">正在精制宣页古卷</h4>
+            <p className="text-xs text-[#5c4a3c] font-mono">{exportStatus}</p>
+          </div>
+        </div>
+      )}
+
       {/* Horizontal leaf scroller simulating Accordion binding (RTL - Right to Left reading orientation) */}
       <div className="w-full flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4 border-b border-[#dcd7c9]/40 pb-3">
         <div className="flex flex-wrap items-center gap-3 font-serif">
@@ -800,165 +1253,32 @@ export const BookViewer: React.FC<BookViewerProps> = ({
         className="w-full flex items-center justify-center p-3 sm:p-6 overflow-x-auto select-none"
         style={{ scrollBehavior: "smooth" }}
       >
-        <div className="flex items-stretch gap-6 relative p-2">
+        <div className="flex flex-col items-center gap-6 relative p-2">
           
           {/* Active page rendering */}
-          {(currentPageIndex === 0 || pages[currentPageIndex - 1]) && (
-            <div
-              id="book-leaf-container"
-              onMouseMove={(e) => handlePageMouseMove(e, currentPageIndex)}
-              onMouseUp={handleSealDragEnd}
-              onMouseLeave={handleSealDragEnd}
-              className={`relative ${scheme.bg} ${scheme.text} rounded-lg shadow-xl flex select-none transition-all duration-300 px-10 sm:px-12 overflow-hidden w-full max-w-full md:max-w-none self-center shrink-0 ${
-                config.showCenterLine
-                  ? "aspect-[40/30] md:w-[800px] md:h-[600px]"
-                  : "aspect-[20/30] md:w-[400px] md:h-[600px]"
-              } ${
-                config.borderStyle === "none"
-                  ? "border-0 shadow-lg"
-                  : config.borderStyle === "single"
-                    ? `border-[3px] ${outerBorderColor}`
-                    : `border-[6px] ${outerBorderColor}`
-              }`}
-              style={{
-                direction: "rtl", // RTL container orientation so columns print right-to-left
-                paddingTop: config.showCenterLine ? "12.5%" : "25%",
-                paddingBottom: config.showCenterLine ? "7.5%" : "15%"
-              }}
-            >
-              {/* High-fidelity Traditional Inner Frame (四周双边内细线) */}
-              {config.borderStyle === "double" && (
-                <div 
-                  className="absolute pointer-events-none select-none z-0" 
-                  style={{
-                    top: '5px',
-                    bottom: '5px',
-                    left: '5px',
-                    right: '5px',
-                    border: `1px solid ${gridLineColor}`,
-                    opacity: 0.75
-                  }}
-                />
-              )}
+          {renderFullBookPage(currentPageIndex, false)}
 
-              {/* Cover Contents or Normal Contents rendering conditional */}
-              {currentPageIndex === 0 ? (
-                renderCoverPageContents()
-              ) : (
-                (() => {
-                  const linesCount = config.linesPerPage;
-                  const rightCount = config.showCenterLine ? Math.ceil(linesCount / 2) : linesCount;
-                  const leftCount = config.showCenterLine ? (linesCount - rightCount) : 0;
+          {/* Hidden container for rendering all pages to export as a complete PDF */}
+          <div 
+            id="hidden-pdf-export-pages-wrapper"
+            className="pointer-events-none select-none fixed animate-fade-in/10"
+            style={{ 
+              left: 0, 
+              top: 0, 
+              zIndex: -120,
+              opacity: 0.01,
+              width: config.showCenterLine ? "800px" : "400px",
+              height: "auto",
+              overflow: "visible"
+            }}
+          >
+            {Array.from({ length: totalPages }).map((_, i) => (
+              <div key={`hidden-page-item-${i}`} style={{ marginBottom: "50px" }}>
+                {renderFullBookPage(i, true)}
+              </div>
+            ))}
+          </div>
 
-                  return (
-                    <div className="flex-1 w-full flex flex-row items-stretch h-full relative z-10 animate-fade-in">
-                      
-                      {/* Right Page (First half of RTL lines) */}
-                      <div 
-                        className="flex-1 flex flex-row items-stretch justify-around h-full"
-                        style={{ width: config.showCenterLine ? `calc(50% - 24px)` : '100%' }}
-                      >
-                        {Array.from({ length: rightCount }).map((_, rIdx) => renderColumn(rIdx))}
-                      </div>
-
-                      {/* Centered Folding Spine Column (版心) */}
-                      {config.showCenterLine && renderCenterSpine()}
-
-                      {/* Left Page (Second half of RTL lines) */}
-                      {config.showCenterLine && leftCount > 0 && (
-                        <div 
-                          className="flex-1 flex flex-row items-stretch justify-around h-full"
-                          style={{ width: `calc(50% - 24px)` }}
-                        >
-                          {Array.from({ length: leftCount }).map((_, lIdx) => renderColumn(rightCount + lIdx))}
-                        </div>
-                      )}
-
-                    </div>
-                  );
-                })()
-              )}
-
-
-
-              {/* Overlay: Interactive stamp seals dragging canvas */}
-              {(book.seals || [])
-                .filter((bs) => bs.pageIndex === currentPageIndex)
-                .map((bs) => {
-                  const sealTemplate = allSeals.find((s) => s.id === bs.sealId);
-                  if (!sealTemplate) return null;
-
-                  const isFocused = activeSealId === bs.id;
-                  const finalScale = bs.scale || 1.0;
-
-                  return (
-                    <div
-                      key={bs.id}
-                      onMouseDown={(e) => handleSealDragStart(e, bs.id)}
-                      className={`absolute select-all select-none origin-center cursor-move transition-shadow z-20 group`}
-                      style={{
-                        left: `${bs.xPct}%`,
-                        top: `${bs.yPct}%`,
-                        transform: `translate(-50%, -50%) scale(${finalScale})`,
-                        outline: isFocused ? "2px dashed #8b4513" : "none"
-                      }}
-                    >
-                      <img
-                        src={sealTemplate.dataUrl || generateSealDataUrl(sealTemplate)}
-                        alt={sealTemplate.text}
-                        className="w-16 h-16 object-contain pointer-events-none drop-shadow-md select-none"
-                        referrerPolicy="no-referrer"
-                      />
-
-                      {/* Mini float seal adjust controls */}
-                      <div className="absolute -top-10 left-1/2 -translate-x-1/2 flex items-center space-x-1 bg-[#f4f1ea] border border-[#dcd7c9] rounded p-1 shadow-md opacity-0 group-hover:opacity-100 transition pointer-events-auto select-none z-30">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            scaleStampedSeal(bs.id, -0.15);
-                          }}
-                          className="p-0.5 hover:bg-[#e8e4d9] rounded text-[#8b4513] pointer-events-auto cursor-pointer"
-                          title="缩章"
-                        >
-                          <ZoomOut className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            scaleStampedSeal(bs.id, 0.15);
-                          }}
-                          className="p-0.5 hover:bg-[#e8e4d9] rounded text-[#8b4513] pointer-events-auto cursor-pointer"
-                          title="扩章"
-                        >
-                          <ZoomIn className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteStampedSeal(bs.id);
-                          }}
-                          className="p-0.5 hover:bg-red-50 rounded text-[#A61B1B] pointer-events-auto cursor-pointer"
-                          title="起章 (移去盖印)"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-
-              {/* Hand painted overlays */}
-              <BrushCanvas
-                pageIndex={currentPageIndex}
-                width={config.showCenterLine ? 800 : 400} // internal canvas coordinate grid matches physical aspect ratio
-                height={600}
-                brushType={brushType}
-                brushSize={brushSize}
-                savedDrawing={book.drawings ? book.drawings[currentPageIndex] : undefined}
-                onSaveDrawing={(idx, dataUrl) => savePageSignature(idx, dataUrl)}
-              />
-            </div>
-          )}
         </div>
       </div>
     </div>
