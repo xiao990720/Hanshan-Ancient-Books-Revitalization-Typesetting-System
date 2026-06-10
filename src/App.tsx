@@ -94,7 +94,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"shelf" | "style" | "seal" | "scribe">("spine");
 
   // Audio mute gate
-  const [guzhengAudioEnabled, setGuzhengAudioEnabled] = useState(true);
+  const [guzhengAudioEnabled, setGuzhengAudioEnabled] = useState(false);
 
   // active leaf tracking index within current book structure
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
@@ -171,7 +171,7 @@ export default function App() {
     };
 
     paragraphs.forEach((p, pIdx) => {
-      if (p === "===换页===") {
+      if (p === "===换页===" || p === "===換頁===") {
         lines.push({ isPageBreak: true });
         return;
       }
@@ -180,7 +180,7 @@ export default function App() {
         return;
       }
       let forceZeroIndent = false;
-      if (p.startsWith("【顶格】") || p.startsWith("【定格】")) {
+      if (p.startsWith("【顶格】") || p.startsWith("【定格】") || p.startsWith("【頂格】")) {
         forceZeroIndent = true;
         p = p.substring(4);
       }

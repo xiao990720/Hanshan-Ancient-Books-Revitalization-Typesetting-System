@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { Book } from "../types";
-import { BookOpen, Trash2, Plus, RotateCcw } from "lucide-react";
+import { BookOpen, Trash2, Plus, RotateCcw, AlertCircle, Check, X } from "lucide-react";
 
 interface BookshelfProps {
   books: Book[];
@@ -10,6 +10,7 @@ interface BookshelfProps {
   onAddNewBook: () => void;
   onResetDefaultClassics: () => void;
 }
+
 
 export const defaultClassics: Book[] = [
   {
@@ -68,6 +69,8 @@ export const Bookshelf: React.FC<BookshelfProps> = ({
   onAddNewBook,
   onResetDefaultClassics
 }) => {
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   return (
     <div className="bg-[#f4f1ea] border border-[#dcd7c9] rounded-xl p-5 shadow-sm text-[#3d2b1f]">
       <div className="flex items-center justify-between mb-4 border-b border-[#dcd7c9] pb-3">
@@ -130,18 +133,42 @@ export const Bookshelf: React.FC<BookshelfProps> = ({
                   </div>
 
                   {/* We shield delete button on default books (unless duplicates) */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm(`确定要将《${book.title}》从藏书架移出吗？`)) {
-                        onDeleteBook(book.id);
-                      }
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#e8e4d9] text-[#7c6a5a] hover:text-[#A61B1B] transition cursor-pointer"
-                    title="移除此藏书并销毁随附印章"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {deletingId === book.id ? (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteBook(book.id);
+                          setDeletingId(null);
+                        }}
+                        className="p-1 rounded bg-[#A61B1B]/10 text-[#A61B1B] hover:bg-[#A61B1B] hover:text-white transition cursor-pointer"
+                        title="确认删除"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeletingId(null);
+                        }}
+                        className="p-1 rounded bg-[#e8e4d9] text-[#7c6a5a] hover:bg-[#dcd7c9] transition cursor-pointer"
+                        title="取消"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeletingId(book.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#e8e4d9] text-[#7c6a5a] hover:text-[#A61B1B] transition cursor-pointer"
+                      title="移除此藏书并销毁随附印章"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
                 <div className="mt-1.5 flex justify-between items-center text-[11px] text-[#7c6a5a] font-serif">

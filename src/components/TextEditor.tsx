@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Book } from "../types";
 import { Sparkles, FileText, ChevronRight, Edit3, Type, Info, Check, HelpCircle, RefreshCw, Layers } from "lucide-react";
+import * as OpenCC from "opencc-js";
 
 interface TextEditorProps {
   allBooks?: Book[];
@@ -175,6 +176,40 @@ export const TextEditor: React.FC<TextEditorProps> = ({ allBooks = [], book, onU
     } finally {
       setAiLoading(false);
       setAiAction(null);
+    }
+  };
+
+  const triggerOpenCcConversion = (type: "s2t" | "t2s") => {
+    if (!book.content.trim()) return;
+    try {
+      const converter = type === "s2t" 
+        ? OpenCC.Converter({ from: 'cn', to: 'tw' }) 
+        : OpenCC.Converter({ from: 'tw', to: 'cn' });
+        
+      let textToConvert = book.content;
+      
+      // Protect special tags from conversion
+      const specialTags = ["===换页===", "===空列===", "===空行===", "【顶格】", "【定格】"];
+      const placeholderMap = new Map<string, string>();
+      
+      specialTags.forEach((tag, idx) => {
+        const placeholder = `__SYSTEM_TAG_PROTECTED_${idx}__`;
+        placeholderMap.set(placeholder, tag);
+        textToConvert = textToConvert.split(tag).join(placeholder);
+      });
+
+      let newText = converter(textToConvert);
+      
+      // Restore special tags
+      placeholderMap.forEach((tag, placeholder) => {
+        newText = newText.split(placeholder).join(tag);
+      });
+
+      handleChange("content", newText);
+      setAiResultNote(`文本已成功转换为${type === "s2t" ? "繁体" : "简体"}。`);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMessage("简繁转换失败！");
     }
   };
 
@@ -439,6 +474,30 @@ export const TextEditor: React.FC<TextEditorProps> = ({ allBooks = [], book, onU
                 >
                   增补批注
                 </button>
+              </div>
+
+              {/* Action 4: Simp/Trad Conversion */}
+              <div className="p-3 bg-[#fcfaf2]/60 rounded-lg border border-[#dcd7c9] flex items-start justify-between gap-3 group hover:border-[#8b4513]/30 hover:bg-[#fcfaf2] transition-all">
+                <div className="space-y-1">
+                  <h4 className="text-xs font-serif font-bold text-[#3d2b1f]">简繁互译转化</h4>
+                  <p className="text-[10px] text-[#7c6a5a] leading-normal">将输入的正文字体进行标准简繁互相转化。</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => triggerOpenCcConversion("s2t")}
+                    disabled={aiLoading}
+                    className="px-3 py-1.5 border border-[#8b4513]/50 text-[#8b4513] hover:bg-[#e8e4d9] text-[11px] font-serif rounded cursor-pointer transition-colors whitespace-nowrap"
+                  >
+                    转繁体
+                  </button>
+                  <button
+                    onClick={() => triggerOpenCcConversion("t2s")}
+                    disabled={aiLoading}
+                    className="px-3 py-1.5 border border-[#8b4513]/50 text-[#8b4513] hover:bg-[#e8e4d9] text-[11px] font-serif rounded cursor-pointer transition-colors whitespace-nowrap"
+                  >
+                    转简体
+                  </button>
+                </div>
               </div>
             </div>
 

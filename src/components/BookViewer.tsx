@@ -345,7 +345,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
 
     paragraphs.forEach((p, pIdx) => {
       // Manual Page Break
-      if (p === "===换页===") {
+      if (p === "===换页===" || p === "===換頁===") {
         lines.push({ isPageBreak: true, tokens: [] });
         return;
       }
@@ -357,7 +357,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
       }
 
       let forceZeroIndent = false;
-      if (p.startsWith("【顶格】") || p.startsWith("【定格】")) {
+      if (p.startsWith("【顶格】") || p.startsWith("【定格】") || p.startsWith("【頂格】")) {
         forceZeroIndent = true;
         p = p.substring(4);
       }
@@ -1006,12 +1006,12 @@ export const BookViewer: React.FC<BookViewerProps> = ({
 
     const paddingStyles = forExport
       ? {
-          paddingTop: config.showCenterLine ? "100px" : "150px",
-          paddingBottom: config.showCenterLine ? "60px" : "90px",
+          paddingTop: config.showCenterLine ? "50px" : "75px",
+          paddingBottom: config.showCenterLine ? "30px" : "45px",
         }
       : {
-          paddingTop: config.showCenterLine ? "12.5%" : "25%",
-          paddingBottom: config.showCenterLine ? "7.5%" : "15%",
+          paddingTop: config.showCenterLine ? "6.25%" : "12.5%",
+          paddingBottom: config.showCenterLine ? "3.75%" : "7.5%",
         };
 
     return (
