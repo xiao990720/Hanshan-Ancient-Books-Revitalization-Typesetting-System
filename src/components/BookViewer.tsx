@@ -826,7 +826,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
 
           {/* Author or edition in lower-left vertical text */}
           <div 
-            className="absolute left-4 sm:left-6 bottom-1/4 flex flex-col items-center leading-none text-stone-600 select-none scale-95"
+            className="absolute left-4 sm:left-6 bottom-1/4 leading-none text-stone-600 select-none scale-95"
             style={{ 
               writingMode: "vertical-rl", 
               textOrientation: "upright",
@@ -887,7 +887,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
               />
             )}
             <div 
-              className={`flex flex-col items-center w-full leading-none text-[#8b4513] font-bold ${getFontClass()}`}
+              className={`w-full leading-none text-[#8b4513] font-bold ${getFontClass()}`}
               style={{ fontSize: `${config.fontSize * 0.9}px`, letterSpacing: "0.2em", writingMode: "vertical-rl", textOrientation: "upright" }}
             >
               其书提要
@@ -911,7 +911,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
                 )}
                 
                 <div 
-                  className={`flex flex-col items-center w-full leading-relaxed text-stone-500 ${getFontClass()}`}
+                  className={`w-full leading-relaxed text-stone-500 ${getFontClass()}`}
                   style={{ 
                     fontSize: `${config.fontSize * 0.75}px`, 
                     letterSpacing: "0.15em",
@@ -919,9 +919,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
                     textOrientation: "upright"
                   }}
                 >
-                  {colText.split("").map((c, i) => (
-                    <span key={i} className="mb-0.5 leading-normal">{c}</span>
-                  ))}
+                  {colText}
                 </div>
               </div>
             );
