@@ -710,10 +710,10 @@ export default function App() {
       </header>
 
       {/* Main Workspace Frame */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+      <main className="flex-1 max-w-[1600px] 2xl:max-w-none 2xl:px-12 w-full mx-auto p-4 md:p-6 flex flex-col lg:flex-row gap-6 lg:gap-8 items-stretch">
         
-        {/* Left Column (Golden proportions: 7 cols) - Interactive Book Viewer viewport */}
-        <section className="lg:col-span-7 flex flex-col justify-between space-y-4">
+        {/* Left Column (Golden proportions: 61.8%) - Interactive Book Viewer viewport */}
+        <section className="flex flex-col justify-between space-y-4 min-w-0" style={{ flex: 1.618 }}>
           {activeBook ? (
             <div className="bg-[#e5e1d7] rounded-2xl border border-[#dcd7c9] p-5 shadow-lg flex flex-col justify-between flex-1 relative overflow-hidden">
               
@@ -865,8 +865,8 @@ export default function App() {
           </div>
         </section>
 
-        {/* Right Column (Golden proportions: 5 cols) - Scribe toolbox panels */}
-        <section className="lg:col-span-5 flex flex-col space-y-4">
+        {/* Right Column (Golden proportions: 38.2%) - Scribe toolbox panels */}
+        <section className="flex flex-col space-y-4 min-w-0" style={{ flex: 1 }}>
           
           {/* Action Tabs for Scribes Chest */}
           <div className="flex border border-[#dcd7c9] p-0.5 rounded-lg bg-[#f4f1ea] font-serif select-none shrink-0 text-xs">

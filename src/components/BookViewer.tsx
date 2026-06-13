@@ -1132,7 +1132,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
   };
 
   return (
-    <div className="flex flex-col items-center w-full select-none" id="book-viewer">
+    <div className="flex flex-col items-center w-full h-full flex-1 min-h-0 select-none" id="book-viewer">
       {/* 1. Floating Select Scope Modal */}
       {showExportScopeModal && (
         <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -1254,10 +1254,10 @@ export const BookViewer: React.FC<BookViewerProps> = ({
       {/* Book simulation viewport */}
       <div
         ref={viewerRef}
-        className="w-full flex items-center justify-center p-3 sm:p-6 overflow-x-auto select-none"
+        className="w-full flex-1 flex items-center justify-center p-3 sm:p-6 overflow-auto select-none"
         style={{ scrollBehavior: "smooth" }}
       >
-        <div className="flex flex-col items-center gap-6 relative p-2">
+        <div className="flex flex-col items-center gap-6 relative p-2 my-auto">
           
           {/* Active page rendering */}
           {renderFullBookPage(currentPageIndex, false)}
