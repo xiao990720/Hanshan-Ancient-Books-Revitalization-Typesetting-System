@@ -665,7 +665,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-[#f9f7f2] text-[#3d2b1f] font-sans flex flex-col selection:bg-[#e8e4d9] selection:text-[#3d2b1f]">
+    <div className="min-h-screen bg-[#f9f7f2] text-[#3d2b1f] font-sans flex flex-col selection:bg-[#e8e4d9] selection:text-[#3d2b1f]">
       
       {/* Visual Top Bar Theme */}
       <header className="bg-[#f4f1ea] border-b border-[#dcd7c9] p-4 px-6 flex justify-between items-center z-10 sticky top-0 shadow-sm animate-fade-in">
@@ -710,12 +710,12 @@ export default function App() {
       </header>
 
       {/* Main Workspace Frame */}
-      <main className="flex-1 lg:min-h-0 max-w-[1600px] 2xl:max-w-none 2xl:px-12 w-full mx-auto p-4 md:p-6 flex flex-col lg:flex-row gap-6 lg:gap-8 items-stretch h-full">
+      <main className="flex-1 max-w-[1600px] 2xl:max-w-none 2xl:px-12 w-full mx-auto p-4 md:p-6 flex flex-col lg:flex-row gap-6 lg:gap-8 items-start">
         
         {/* Left Column (Golden proportions: 61.8%) - Interactive Book Viewer viewport */}
-        <section className="flex flex-col justify-between space-y-4 lg:flex-[1.618] lg:min-w-0 min-h-[60vh] lg:min-h-0 h-full">
+        <section className="flex flex-col justify-between space-y-4 lg:flex-[1.618] min-h-[60vh]">
           {activeBook ? (
-            <div className="bg-[#e5e1d7] rounded-2xl border border-[#dcd7c9] p-5 shadow-lg flex flex-col justify-between flex-1 relative overflow-hidden min-h-0">
+            <div className="bg-[#e5e1d7] rounded-2xl border border-[#dcd7c9] p-5 shadow-lg flex flex-col justify-between flex-1 relative overflow-hidden h-full min-h-[600px]">
               
               {/* Title tag decoration */}
               <div className="flex items-center justify-between border-b border-[#dcd7c9] pb-3 mb-2 shrink-0">
@@ -866,7 +866,7 @@ export default function App() {
         </section>
 
         {/* Right Column (Golden proportions: 38.2%) - Scribe toolbox panels */}
-        <section className="flex flex-col space-y-4 lg:flex-1 lg:min-w-0 h-full">
+        <section className="flex flex-col space-y-4 lg:flex-1 lg:min-w-0">
           
           {/* Action Tabs for Scribes Chest */}
           <div className="flex border border-[#dcd7c9] p-0.5 rounded-lg bg-[#f4f1ea] font-serif select-none shrink-0 text-xs">

@@ -124,10 +124,10 @@ export const BookViewer: React.FC<BookViewerProps> = ({
       const paddingY = 64;
 
       const scaleX = (containerWidth - paddingX) / bookWidth;
-      const scaleY = (containerHeight - paddingY) / bookHeight;
       
-      // Keep ratio by taking the minimum scale, cap at 1 to prevent it getting too huge
-      const newScale = Math.min(scaleX, scaleY);
+      // Keep ratio by maximizing width, cap at a reasonable size if needed (or let it be as large as possible)
+      // The user wants: width maxed out, height adapts.
+      const newScale = scaleX;
       setScale(newScale);
     };
 
@@ -1278,18 +1278,28 @@ export const BookViewer: React.FC<BookViewerProps> = ({
       {/* Book simulation viewport */}
       <div
         ref={viewerRef}
-        className="w-full flex-1 overflow-hidden select-none min-h-0 flex items-center justify-center relative p-8"
+        className="w-full flex-1 overflow-hidden select-none min-h-0 flex items-start justify-center p-4 sm:p-8"
+        style={{ scrollBehavior: "smooth" }}
       >
         <div 
-          ref={containerRef}
           style={{ 
-            transform: `scale(${scale})`, 
-            transformOrigin: "center center",
-            width: config.showCenterLine ? 800 : 400,
-            height: 600
+            width: (config.showCenterLine ? 800 : 400) * scale, 
+            height: 600 * scale,
+            minHeight: 600 * scale,
+            minWidth: (config.showCenterLine ? 800 : 400) * scale,
           }}
-          className="flex items-center justify-center absolute m-auto"
+          className="relative m-auto shrink-0 flex items-center justify-center"
         >
+          <div 
+            ref={containerRef}
+            style={{ 
+              transform: `scale(${scale})`, 
+              transformOrigin: "center center",
+              width: config.showCenterLine ? 800 : 400,
+              height: 600
+            }}
+            className="flex items-center justify-center absolute m-auto"
+          >
           
           {/* Active page rendering */}
           {renderFullBookPage(currentPageIndex, false)}
@@ -1315,6 +1325,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
             ))}
           </div>
 
+        </div>
         </div>
       </div>
     </div>
