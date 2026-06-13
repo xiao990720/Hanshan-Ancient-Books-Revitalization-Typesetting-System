@@ -106,6 +106,35 @@ export const BookViewer: React.FC<BookViewerProps> = ({
   const [isExporting, setIsExporting] = useState(false);
   const [showExportScopeModal, setShowExportScopeModal] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
+  const [scale, setScale] = useState(1);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const updateScale = () => {
+      if (!viewerRef.current || !containerRef.current) return;
+      const containerWidth = viewerRef.current.clientWidth;
+      const containerHeight = viewerRef.current.clientHeight;
+      
+      const isDualPage = config.showCenterLine;
+      const bookWidth = isDualPage ? 800 : 400;
+      const bookHeight = 600;
+
+      // Subtract 64px (padding p-8 is 32px on each side) to keep some safe bounds
+      const paddingX = 64;
+      const paddingY = 64;
+
+      const scaleX = (containerWidth - paddingX) / bookWidth;
+      const scaleY = (containerHeight - paddingY) / bookHeight;
+      
+      // Keep ratio by taking the minimum scale, cap at 1 to prevent it getting too huge
+      const newScale = Math.min(scaleX, scaleY);
+      setScale(newScale);
+    };
+
+    updateScale();
+    window.addEventListener("resize", updateScale);
+    return () => window.removeEventListener("resize", updateScale);
+  }, [config.showCenterLine]);
 
   const handleExportPDF = () => {
     setShowExportScopeModal(true);
@@ -998,19 +1027,14 @@ export const BookViewer: React.FC<BookViewerProps> = ({
   };
 
   const renderFullBookPage = (pageIdx: number, forExport: boolean = false) => {
-    const sizeClasses = forExport
-      ? (config.showCenterLine ? "w-[800px] h-[600px] min-w-[800px] min-h-[600px]" : "w-[400px] h-[600px] min-w-[400px] min-h-[600px]")
-      : (config.showCenterLine ? "aspect-[40/30] md:w-[800px] md:h-[600px] w-full" : "aspect-[20/30] md:w-[400px] md:h-[600px] w-full");
+    const sizeClasses = config.showCenterLine 
+      ? "w-[800px] h-[600px] min-w-[800px] min-h-[600px]" 
+      : "w-[400px] h-[600px] min-w-[400px] min-h-[600px]";
 
-    const paddingStyles = forExport
-      ? {
-          paddingTop: config.showCenterLine ? "50px" : "75px",
-          paddingBottom: config.showCenterLine ? "30px" : "45px",
-        }
-      : {
-          paddingTop: config.showCenterLine ? "6.25%" : "12.5%",
-          paddingBottom: config.showCenterLine ? "3.75%" : "7.5%",
-        };
+    const paddingStyles = {
+      paddingTop: config.showCenterLine ? "50px" : "75px",
+      paddingBottom: config.showCenterLine ? "30px" : "45px",
+    };
 
     return (
       <div
@@ -1254,10 +1278,18 @@ export const BookViewer: React.FC<BookViewerProps> = ({
       {/* Book simulation viewport */}
       <div
         ref={viewerRef}
-        className="w-full flex-1 p-3 sm:p-6 overflow-auto select-none min-h-0"
-        style={{ scrollBehavior: "smooth" }}
+        className="w-full flex-1 overflow-hidden select-none min-h-0 flex items-center justify-center relative p-8"
       >
-        <div className="flex flex-col items-center gap-6 relative w-max mx-auto p-2">
+        <div 
+          ref={containerRef}
+          style={{ 
+            transform: `scale(${scale})`, 
+            transformOrigin: "center center",
+            width: config.showCenterLine ? 800 : 400,
+            height: 600
+          }}
+          className="flex items-center justify-center absolute m-auto"
+        >
           
           {/* Active page rendering */}
           {renderFullBookPage(currentPageIndex, false)}
