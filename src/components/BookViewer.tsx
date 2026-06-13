@@ -1190,7 +1190,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
       )}
 
       {/* Horizontal leaf scroller simulating Accordion binding (RTL - Right to Left reading orientation) */}
-      <div className="w-full flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4 border-b border-[#dcd7c9]/40 pb-3">
+      <div className="w-full flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4 border-b border-[#dcd7c9]/40 pb-3 shrink-0">
         <div className="flex flex-wrap items-center gap-3 font-serif">
           <div className="text-xs text-[#7c6a5a] flex items-center flex-wrap gap-2">
             <span>页规：半页 {config.linesPerPage} 行，每行 {config.charsPerLine} 字。 </span>
@@ -1254,10 +1254,10 @@ export const BookViewer: React.FC<BookViewerProps> = ({
       {/* Book simulation viewport */}
       <div
         ref={viewerRef}
-        className="w-full flex-1 flex items-center justify-center p-3 sm:p-6 overflow-auto select-none"
+        className="w-full flex-1 p-3 sm:p-6 overflow-auto select-none min-h-0"
         style={{ scrollBehavior: "smooth" }}
       >
-        <div className="flex flex-col items-center gap-6 relative p-2 my-auto">
+        <div className="flex flex-col items-center gap-6 relative w-max mx-auto p-2">
           
           {/* Active page rendering */}
           {renderFullBookPage(currentPageIndex, false)}
