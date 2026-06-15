@@ -621,12 +621,52 @@ export const BookViewer: React.FC<BookViewerProps> = ({
 
   // Traditional Chinese numbers converter for authentic block-print folio numbering
   const toChineseNumerals = (num: number): string => {
-    const chns = ["○", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
-    if (num <= 10) return chns[num];
-    if (num < 20) return "十" + (num % 10 !== 0 ? chns[num % 10] : "");
-    const tens = Math.floor(num / 10);
-    const units = num % 10;
-    return chns[tens] + "十" + (units !== 0 ? chns[units] : "");
+    const chns = ["○", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+    if (num === 10) return "十";
+    if (num < 100) {
+      const tens = Math.floor(num / 10);
+      const units = num % 10;
+      let res = "";
+      if (tens === 1) res += "十";
+      else if (tens > 1) res += chns[tens] + "十";
+      
+      if (units !== 0) res += chns[units];
+      return res;
+    }
+    if (num < 1000) {
+      const h = Math.floor(num / 100);
+      const t = Math.floor((num % 100) / 10);
+      const u = num % 10;
+      let res = chns[h] + "百";
+      if (t === 0) {
+        if (u !== 0) res += "○" + chns[u];
+      } else {
+        res += (t === 1 ? "一十" : chns[t] + "十");
+        if (u !== 0) res += chns[u];
+      }
+      return res;
+    }
+    if (num < 10000) {
+      const th = Math.floor(num / 1000);
+      const h = Math.floor((num % 1000) / 100);
+      const t = Math.floor((num % 100) / 10);
+      const u = num % 10;
+      let res = chns[th] + "千";
+      if (h === 0) {
+        if (t !== 0 || u !== 0) res += "○";
+      } else {
+        res += chns[h] + "百";
+      }
+      if (t !== 0) {
+        res += (t === 1 ? "一十" : chns[t] + "十");
+      } else {
+        if (h !== 0 && u !== 0) res += "○";
+      }
+      if (u !== 0) res += chns[u];
+      // remove double zeroes safely just in case
+      return res.replace(/○+/g, "○").replace(/○$/, "");
+    }
+    return num.toString().split("").map(d => chns[parseInt(d)]).join("");
   };
 
   const renderColumn = (colIdx: number, pageIdx: number = currentPageIndex) => {

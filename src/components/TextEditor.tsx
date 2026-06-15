@@ -91,8 +91,14 @@ export const TextEditor: React.FC<TextEditorProps> = ({ allBooks = [], book, onU
       });
 
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "断句请求失败，请确认服务端 API 秘钥配置。");
+        let errorMsg = "断句请求失败。";
+        try {
+          const errorData = await res.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch(e) {
+          errorMsg += " 服务端返回了无法解析的异常。";
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await res.json();
@@ -128,8 +134,14 @@ export const TextEditor: React.FC<TextEditorProps> = ({ allBooks = [], book, onU
       });
 
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "翻译请求失败。");
+        let errorMsg = "翻译请求失败。";
+        try {
+          const errorData = await res.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch(e) {
+          errorMsg += " 服务端返回了无法解析的异常。";
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await res.json();
@@ -161,8 +173,14 @@ export const TextEditor: React.FC<TextEditorProps> = ({ allBooks = [], book, onU
       });
 
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "生成脂批小字夹注失败。");
+        let errorMsg = "生成脂批小字夹注失败。";
+        try {
+          const errorData = await res.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch(e) {
+          errorMsg += " 服务端返回了无法解析的异常。";
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await res.json();

@@ -9,7 +9,8 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // Lazy-loaded Gemini client
 let aiClient: GoogleGenAI | null = null;
@@ -52,7 +53,7 @@ app.post("/api/ai/punctuate", async (req: Request, res: Response) => {
 "${text}"`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -82,8 +83,16 @@ app.post("/api/ai/punctuate", async (req: Request, res: Response) => {
     if (!resultText) {
       throw new Error("Received empty response from Gemini.");
     }
+    
+    // Clean up potential markdown formatting from Gemini
+    const cleanText = resultText.replace(/^```json/g, "").replace(/```$/g, "").trim();
 
-    res.json(JSON.parse(resultText));
+    try {
+      res.json(JSON.parse(cleanText));
+    } catch (e) {
+      console.error("JSON parse error:", e, "Raw output:", resultText);
+      throw new Error("模型返回了无法解析的格式：" + resultText.substring(0, 50));
+    }
   } catch (err: any) {
     console.error("Punctuation error:", err);
     res.status(500).json({ error: err.message || "Failed to punctuate content." });
@@ -114,7 +123,7 @@ app.post("/api/ai/translate", async (req: Request, res: Response) => {
 "${text}"`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -140,7 +149,15 @@ app.post("/api/ai/translate", async (req: Request, res: Response) => {
       throw new Error("Received empty response from Gemini.");
     }
 
-    res.json(JSON.parse(resultText));
+    // Clean up potential markdown formatting from Gemini
+    const cleanText = resultText.replace(/^```json/g, "").replace(/```$/g, "").trim();
+
+    try {
+      res.json(JSON.parse(cleanText));
+    } catch (e) {
+      console.error("JSON parse error:", e, "Raw output:", resultText);
+      throw new Error("模型返回了无法解析的格式：" + resultText.substring(0, 50));
+    }
   } catch (err: any) {
     console.error("Translation error:", err);
     res.status(500).json({ error: err.message || "Failed to translate content." });
@@ -168,7 +185,7 @@ app.post("/api/ai/annotate", async (req: Request, res: Response) => {
 请输出在文章合适地方穿插了双括号注释的新文本，不要输出其他外围文本。`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -194,7 +211,15 @@ app.post("/api/ai/annotate", async (req: Request, res: Response) => {
       throw new Error("Received empty response from Gemini.");
     }
 
-    res.json(JSON.parse(resultText));
+    // Clean up potential markdown formatting from Gemini
+    const cleanText = resultText.replace(/^```json/g, "").replace(/```$/g, "").trim();
+
+    try {
+      res.json(JSON.parse(cleanText));
+    } catch (e) {
+      console.error("JSON parse error:", e, "Raw output:", resultText);
+      throw new Error("模型返回了无法解析的格式：" + resultText.substring(0, 50));
+    }
   } catch (err: any) {
     console.error("Annotation error:", err);
     res.status(500).json({ error: err.message || "Failed to annotate content." });
